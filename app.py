@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
 import os
 
 # =====================================
@@ -13,34 +12,27 @@ DB = "football_nueva.db"
 st.set_page_config(
     page_title="🏆 Seguimiento Liga de Fútbol",
     page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Estilo CSS personalizado
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1E88E5;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .stMetric {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-    }
-</style>
-""", unsafe_allow_html=True)
+# =====================================
+# VERIFICAR BASE DE DATOS
+# =====================================
+if not os.path.exists(DB):
+    st.error(f"""
+    ❌ **Base de datos no encontrada**
+    
+    Archivo requerido: `{DB}`
+    
+    Archivos en el servidor: {', '.join(sorted(os.listdir('.')))}
+    """)
+    st.stop()
 
 # =====================================
 # FUNCIONES DE BASE DE DATOS
 # =====================================
 @st.cache_data(ttl=300)
 def obtener_valores_unicos(columna, tabla="partidos"):
-    """Obtiene valores únicos de una columna."""
     try:
         conn = sqlite3.connect(DB)
         cur = conn.cursor()
@@ -53,13 +45,11 @@ def obtener_valores_unicos(columna, tabla="partidos"):
         valores = [r[0] for r in cur.fetchall()]
         conn.close()
         return valores
-    except Exception as e:
-        st.error(f"Error al obtener valores: {e}")
+    except:
         return []
 
 @st.cache_data(ttl=300)
 def obtener_equipos():
-    """Obtiene lista de equipos (locales y visitantes)."""
     try:
         conn = sqlite3.connect(DB)
         cur = conn.cursor()
@@ -73,14 +63,12 @@ def obtener_equipos():
         """)
         equipos = [r[0] for r in cur.fetchall()]
         conn.close()
-        return equipos
-    except Exception as e:
-        st.error(f"Error al obtener equipos: {e}")
+        return equipos if equipos else []
+    except:
         return []
 
 @st.cache_data(ttl=300)
 def obtener_jugadores():
-    """Obtiene lista de jugadores con tarjetas."""
     try:
         conn = sqlite3.connect(DB)
         cur = conn.cursor()
@@ -91,36 +79,35 @@ def obtener_jugadores():
         """)
         jugadores = [r[0] for r in cur.fetchall()]
         conn.close()
-        return jugadores
-    except Exception as e:
-        st.error(f"Error al obtener jugadores: {e}")
+        return jugadores if jugadores else []
+    except:
         return []
 
 # =====================================
-# SIDEBAR: FILTROS PRINCIPALES
+# SIDEBAR: FILTROS
 # =====================================
 st.sidebar.title("FilterWhere ⚽")
 
-# Filtros globales
-st.sidebar.markdown("### 🔍 Filtros Generales")
-anio = st.sidebar.text_input("Año", placeholder="Ej: 2024", help="Filtrar por año del partido")
+anio = st.sidebar.text_input("Año", placeholder="Ej: 2024", key="sidebar_anio")
 campeonato = st.sidebar.selectbox(
     "Campeonato",
     [""] + obtener_valores_unicos("campeonato"),
-    format_func=lambda x: "Todos" if x == "" else x
+    format_func=lambda x: "Todos" if x == "" else x,
+    key="sidebar_campeonato"
 )
 equipo_filtro = st.sidebar.selectbox(
     "Equipo",
     [""] + obtener_equipos(),
-    format_func=lambda x: "Todos" if x == "" else x
+    format_func=lambda x: "Todos" if x == "" else x,
+    key="sidebar_equipo"
 )
-solo_expulsados = st.sidebar.checkbox("✅ Solo jugadores expulsados", value=False)
+solo_expulsados = st.sidebar.checkbox("✅ Solo jugadores expulsados", value=False, key="sidebar_solo_expulsados")
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 Los filtros se aplican en la pestaña 'Tarjetas por Jugador'")
+st.sidebar.caption("💡 Filtros aplicados en 'Tarjetas por Jugador'")
 
 # =====================================
-# PESTAÑAS PRINCIPALES
+# PESTAÑAS
 # =====================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Tarjetas por Jugador",
@@ -131,12 +118,11 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # =====================================
-# PESTAÑA 1: TARJETAS POR JUGADOR
+# TAB 1: TARJETAS POR JUGADOR
 # =====================================
 with tab1:
-    st.markdown('<div class="main-header">Tarjetas por Jugador</div>', unsafe_allow_html=True)
+    st.markdown("## 📊 Tarjetas por Jugador")
     
-    # Consulta principal
     query = """
         SELECT
             t.jugador,
@@ -153,7 +139,6 @@ with tab1:
     """
     
     params = []
-    
     if anio:
         query += " AND SUBSTR(p.fecha, 7, 4) = ?"
         params.append(anio)
@@ -174,126 +159,69 @@ with tab1:
     
     try:
         conn = sqlite3.connect(DB)
-        df_jugadores = pd.read_sql_query(query, conn, params=params)
+        df = pd.read_sql_query(query, conn, params=params)
         conn.close()
         
-        if df_jugadores.empty:
+        if df.empty:
             st.warning("⚠️ No se encontraron datos con los filtros aplicados.")
         else:
-            # Métricas resumen
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Jugadores", len(df_jugadores))
-            with col2:
-                st.metric("⚠️ Amonestados", int(df_jugadores['amon'].sum()))
-            with col3:
-                st.metric("🔴 Expulsados", int(df_jugadores['exp'].sum()))
-            with col4:
-                st.metric("📊 Total Tarjetas", int((df_jugadores['amon'] + df_jugadores['exp']).sum()))
-            
-            st.markdown("---")
-            
-            # Formatear y mostrar tabla
-            df_jugadores["Total"] = df_jugadores["amon"] + df_jugadores["exp"]
-            df_display = df_jugadores.rename(columns={
+            df["Total"] = df["amon"] + df["exp"]
+            df_display = df.rename(columns={
                 "jugador": "Jugador",
                 "equipo_jugador": "Equipo",
                 "amon": "Amonestaciones",
                 "exp": "Expulsiones"
             })
             
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Jugadores", len(df_display))
+            with col2:
+                st.metric("⚠️ Amonestados", int(df_display['Amonestaciones'].sum()))
+            with col3:
+                st.metric("🔴 Expulsados", int(df_display['Expulsiones'].sum()))
+            with col4:
+                st.metric("📊 Total", int(df_display['Total'].sum()))
+            
             st.dataframe(
                 df_display[["Jugador", "Equipo", "Amonestaciones", "Expulsiones", "Total"]],
                 column_config={
-                    "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", width="small", format="%d"),
-                    "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", width="small", format="%d"),
-                    "Total": st.column_config.NumberColumn("📊 Total", width="small", format="%d"),
+                    "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", format="%d"),
+                    "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", format="%d"),
+                    "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
                 },
                 hide_index=True,
                 use_container_width=True,
-                height=450
+                height=400
             )
-            
-            # Gráfico de barras - Top 10
-            st.markdown("### 📊 Top 10 Jugadores con más tarjetas")
-            
-            top10 = df_display.head(10)
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
-            
-            x = range(len(top10))
-            width = 0.35
-            
-            bars1 = ax.bar([i - width/2 for i in x], top10["Amonestaciones"], 
-                          width, label="Amonestaciones", color="#FFC107", alpha=0.8)
-            bars2 = ax.bar([i + width/2 for i in x], top10["Expulsiones"], 
-                          width, label="Expulsiones", color="#F44336", alpha=0.8)
-            
-            # Añadir valores en las barras
-            for bars in [bars1, bars2]:
-                for bar in bars:
-                    height = bar.get_height()
-                    if height > 0:
-                        ax.text(bar.get_x() + bar.get_width()/2., height,
-                               f'{int(height)}',
-                               ha='center', va='bottom', fontsize=9)
-            
-            ax.set_xlabel("Jugador", fontsize=11, fontweight='bold')
-            ax.set_ylabel("Cantidad", fontsize=11, fontweight='bold')
-            ax.set_title("Top 10 - Distribución de Tarjetas", fontsize=13, fontweight='bold')
-            ax.set_xticks(x)
-            ax.set_xticklabels(top10["Jugador"], rotation=45, ha='right', fontsize=10)
-            ax.legend(fontsize=10)
-            ax.grid(axis='y', alpha=0.3, linestyle='--')
-            ax.set_axisbelow(True)
-            
-            plt.tight_layout()
-            st.pyplot(fig)
-            
     except Exception as e:
-        st.error(f"❌ Error al cargar los datos: {e}")
+        st.error(f"Error: {e}")
 
 # =====================================
-# PESTAÑA 2: EVOLUCIÓN POR EQUIPO
+# TAB 2: EVOLUCIÓN POR EQUIPO
 # =====================================
 with tab2:
-    st.markdown('<div class="main-header">Evolución Anual de Tarjetas por Equipo</div>', unsafe_allow_html=True)
+    st.markdown("## 📈 Evolución Anual por Equipo")
     
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        st.markdown("### 🎯 Seleccione Equipo")
-        equipo_grafico = st.selectbox(
-            "Equipo",
-            obtener_equipos(),
-            key="equipo_grafico"
-        )
-        
-        if st.button("📊 Generar Gráfico", type="primary", use_container_width=True):
-            pass
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab2_equipo")
     
     with col2:
-        if equipo_grafico:
+        if equipo:
             try:
                 conn = sqlite3.connect(DB)
                 cur = conn.cursor()
                 cur.execute("""
-                    SELECT
-                        SUBSTR(p.fecha, 7, 4) AS anio,
-                        SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
-                        SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
+                    SELECT SUBSTR(p.fecha, 7, 4) AS anio,
+                           SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
+                           SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
                     FROM partidos p
                     JOIN tarjetas t ON t.partido_id = p.id
-                    WHERE p.arbitro IS NOT NULL
-                      AND p.arbitro <> ''
-                      AND (
-                          (p.equipo_local = ? AND t.equipo = 'Local')
-                          OR 
-                          (p.equipo_visitante = ? AND t.equipo = 'Visitante')
-                      )
-                    GROUP BY anio
-                    ORDER BY anio
-                """, (equipo_grafico, equipo_grafico))
+                    WHERE (p.equipo_local = ? OR p.equipo_visitante = ?)
+                    GROUP BY anio ORDER BY anio
+                """, (equipo, equipo))
                 
                 filas = cur.fetchall()
                 conn.close()
@@ -301,80 +229,32 @@ with tab2:
                 if filas:
                     df = pd.DataFrame(filas, columns=["Año", "Amonestaciones", "Expulsiones"])
                     
-                    # Métricas
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a:
-                        st.metric("Años Registrados", len(df))
-                    with col_b:
-                        st.metric("⚠️ Total Amonestaciones", int(df["Amonestaciones"].sum()))
-                    with col_c:
-                        st.metric("🔴 Total Expulsiones", int(df["Expulsiones"].sum()))
-                    
-                    st.markdown("---")
-                    
-                    # Gráfico de líneas
-                    fig, ax = plt.subplots(figsize=(12, 6))
-                    
-                    ax.plot(df["Año"], df["Amonestaciones"], 
-                           marker="o", linewidth=3, markersize=8,
-                           label="Amonestaciones", color="#FFC107", alpha=0.9)
-                    ax.plot(df["Año"], df["Expulsiones"], 
-                           marker="s", linewidth=3, markersize=8,
-                           label="Expulsiones", color="#F44336", alpha=0.9)
-                    
-                    # Añadir valores en los puntos
-                    for i, row in df.iterrows():
-                        ax.annotate(f'{int(row["Amonestaciones"])}', 
-                                  (row["Año"], row["Amonestaciones"]),
-                                  textcoords="offset points", xytext=(0,10), 
-                                  ha='center', fontsize=9, color='#FFC107')
-                        ax.annotate(f'{int(row["Expulsiones"])}', 
-                                  (row["Año"], row["Expulsiones"]),
-                                  textcoords="offset points", xytext=(0,10), 
-                                  ha='center', fontsize=9, color='#F44336')
-                    
-                    ax.set_xlabel("Año", fontsize=12, fontweight='bold')
-                    ax.set_ylabel("Cantidad", fontsize=12, fontweight='bold')
-                    ax.set_title(f"Evolución de tarjetas - {equipo_grafico}", 
-                               fontsize=14, fontweight='bold', pad=20)
-                    ax.grid(True, alpha=0.3, linestyle='--')
-                    ax.legend(fontsize=11, loc='upper left')
-                    ax.set_xticks(df["Año"])
-                    
-                    plt.tight_layout()
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(df["Año"], df["Amonestaciones"], marker="o", label="Amonestaciones", color="#FFC107")
+                    ax.plot(df["Año"], df["Expulsiones"], marker="s", label="Expulsiones", color="#F44336")
+                    ax.set_title(f"Evolución - {equipo}")
+                    ax.set_xlabel("Año")
+                    ax.set_ylabel("Cantidad")
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
                     st.pyplot(fig)
                     
-                    # Tabla de datos
-                    st.markdown("### 📋 Datos Detallados")
-                    st.dataframe(
-                        df.style.highlight_max(axis=0, props='font-weight: bold; color: #1E88E5;'),
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    st.dataframe(df, hide_index=True, use_container_width=True)
                 else:
-                    st.info("ℹ️ No hay datos disponibles para este equipo.")
-                    
+                    st.info("No hay datos para este equipo.")
             except Exception as e:
-                st.error(f"❌ Error al generar gráfico: {e}")
+                st.error(f"Error: {e}")
 
 # =====================================
-# PESTAÑA 3: RESUMEN POR RIVAL
+# TAB 3: RESUMEN POR RIVAL
 # =====================================
 with tab3:
-    st.markdown('<div class="main-header">Resumen de Tarjetas por Rival</div>', unsafe_allow_html=True)
+    st.markdown("## 🆚 Resumen por Rival")
     
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        st.markdown("### 🎯 Seleccione Jugador")
-        jugador = st.selectbox(
-            "Jugador",
-            obtener_jugadores(),
-            key="jugador_rival"
-        )
-        
-        if st.button("🔍 Consultar", type="primary", use_container_width=True):
-            pass
+        jugador = st.selectbox("Selecciona jugador", obtener_jugadores(), key="tab3_jugador")
     
     with col2:
         if jugador:
@@ -385,47 +265,31 @@ with tab3:
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT DISTINCT
-                        CASE
-                            WHEN t.equipo = 'Local' THEN p.equipo_local
-                            WHEN t.equipo = 'Visitante' THEN p.equipo_visitante
-                        END AS equipo_jugador
-                    FROM partidos p
-                    JOIN tarjetas t ON t.partido_id = p.id
-                    WHERE t.jugador = ?
-                    LIMIT 1
+                        CASE WHEN t.equipo = 'Local' THEN p.equipo_local
+                             WHEN t.equipo = 'Visitante' THEN p.equipo_visitante END
+                    FROM partidos p JOIN tarjetas t ON t.partido_id = p.id
+                    WHERE t.jugador = ? LIMIT 1
                 """, (jugador,))
-                resultado = cur.fetchone()
-                equipo_jugador = resultado[0] if resultado else "Desconocido"
+                equipo_jug = cur.fetchone()
+                equipo_jug = equipo_jug[0] if equipo_jug else "Desconocido"
                 
-                # Obtener resumen por rival
-                query_rival = """
+                # Resumen por rival
+                df_rivales = pd.read_sql_query("""
                     SELECT
-                        CASE
-                            WHEN t.equipo = 'Local' THEN p.equipo_visitante
-                            WHEN t.equipo = 'Visitante' THEN p.equipo_local
-                        END AS rival,
-                        COUNT(*) AS total_tarjetas,
+                        CASE WHEN t.equipo = 'Local' THEN p.equipo_visitante
+                             WHEN t.equipo = 'Visitante' THEN p.equipo_local END AS rival,
+                        COUNT(*) AS total,
                         SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
                         SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
-                    FROM partidos p
-                    JOIN tarjetas t ON t.partido_id = p.id
+                    FROM partidos p JOIN tarjetas t ON t.partido_id = p.id
                     WHERE t.jugador = ?
-                    GROUP BY rival
-                    ORDER BY total_tarjetas DESC
-                """
-                
-                df_rivales = pd.read_sql_query(query_rival, conn, params=(jugador,))
+                    GROUP BY rival ORDER BY total DESC
+                """, conn, params=(jugador,))
                 conn.close()
                 
-                if df_rivales.empty:
-                    st.warning(f"⚠️ No se encontraron tarjetas para {jugador}")
-                else:
-                    st.markdown(f"### 👤 {jugador}")
-                    st.markdown(f"**Equipo:** {equipo_jugador}")
+                if not df_rivales.empty:
+                    st.markdown(f"**Jugador:** {jugador} | **Equipo:** {equipo_jug}")
                     
-                    st.markdown("---")
-                    
-                    # Métricas
                     col_a, col_b, col_c, col_d = st.columns(4)
                     with col_a:
                         st.metric("Rivales", len(df_rivales))
@@ -434,216 +298,99 @@ with tab3:
                     with col_c:
                         st.metric("🔴 Expulsiones", int(df_rivales['exp'].sum()))
                     with col_d:
-                        st.metric("📊 Total", int(df_rivales['total_tarjetas'].sum()))
+                        st.metric("📊 Total", int(df_rivales['total'].sum()))
                     
-                    st.markdown("---")
-                    
-                    # Tabla
-                    df_rivales = df_rivales.rename(columns={
-                        "rival": "Rival",
-                        "amon": "Amonestaciones",
-                        "exp": "Expulsiones",
-                        "total_tarjetas": "Total"
-                    })
-                    
+                    df_rivales = df_rivales.rename(columns={"rival": "Rival", "amon": "Amonestaciones", "exp": "Expulsiones", "total": "Total"})
                     st.dataframe(
                         df_rivales[["Rival", "Amonestaciones", "Expulsiones", "Total"]],
                         column_config={
-                            "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", width="small", format="%d"),
-                            "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", width="small", format="%d"),
-                            "Total": st.column_config.NumberColumn("📊 Total", width="small", format="%d"),
+                            "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", format="%d"),
+                            "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", format="%d"),
+                            "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
                         },
                         hide_index=True,
                         use_container_width=True,
-                        height=400
+                        height=350
                     )
-                    
-                    # Gráfico de barras
-                    if len(df_rivales) > 0:
-                        st.markdown("### 📊 Distribución por Rival")
-                        
-                        fig, ax = plt.subplots(figsize=(12, 6))
-                        
-                        x = range(len(df_rivales))
-                        width = 0.35
-                        
-                        ax.bar([i - width/2 for i in x], df_rivales["Amonestaciones"], 
-                              width, label="Amonestaciones", color="#FFC107", alpha=0.8)
-                        ax.bar([i + width/2 for i in x], df_rivales["Expulsiones"], 
-                              width, label="Expulsiones", color="#F44336", alpha=0.8)
-                        
-                        ax.set_xlabel("Rival", fontsize=11, fontweight='bold')
-                        ax.set_ylabel("Cantidad", fontsize=11, fontweight='bold')
-                        ax.set_title(f"Tarjetas de {jugador} por Rival", fontsize=13, fontweight='bold')
-                        ax.set_xticks(x)
-                        ax.set_xticklabels(df_rivales["Rival"], rotation=45, ha='right', fontsize=10)
-                        ax.legend(fontsize=10)
-                        ax.grid(axis='y', alpha=0.3, linestyle='--')
-                        ax.set_axisbelow(True)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        
+                else:
+                    st.warning("No hay datos para este jugador.")
             except Exception as e:
-                st.error(f"❌ Error en consulta: {e}")
+                st.error(f"Error: {e}")
 
 # =====================================
-# PESTAÑA 4: CONSULTA POR EQUIPO
+# TAB 4: CONSULTA POR EQUIPO
 # =====================================
 with tab4:
-    st.markdown('<div class="main-header">Consulta Histórica de Tarjetas por Equipo</div>', unsafe_allow_html=True)
+    st.markdown("## 📋 Consulta Histórica por Equipo")
     
-    col1, col2 = st.columns([1, 2])
+    equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab4_equipo")
     
-    with col1:
-        st.markdown("### 🎯 Seleccione Equipo")
-        equipo_consulta = st.selectbox(
-            "Equipo",
-            obtener_equipos(),
-            key="equipo_consulta"
-        )
-        
-        if st.button("🔍 Consultar", type="primary", use_container_width=True):
-            pass
-    
-    with col2:
-        if equipo_consulta:
-            try:
-                conn = sqlite3.connect(DB)
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT
-                        SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
-                        SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
-                    FROM partidos p
-                    JOIN tarjetas t ON t.partido_id = p.id
-                    WHERE p.arbitro IS NOT NULL
-                      AND p.arbitro <> ''
-                      AND (p.equipo_local = ? OR p.equipo_visitante = ?)
-                """, (equipo_consulta, equipo_consulta))
-                
-                amon, exp = cur.fetchone()
-                conn.close()
-                
-                amon = amon or 0
-                exp = exp or 0
-                total = amon + exp
-                
-                # Tarjetas métricas grandes
-                st.markdown(f"### 📊 Resumen para {equipo_consulta}")
-                
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric(label="⚽ Partidos con Árbitro", value="N/A")
-                with col_b:
-                    st.metric(label="⚠️ Amonestaciones", value=amon)
-                with col_c:
-                    st.metric(label="🔴 Expulsiones", value=exp)
-                
-                st.metric(label="📊 Total Tarjetas", value=total)
-                
-                st.markdown("---")
-                
-                # Gráfico circular
-                if total > 0:
-                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-                    
-                    # Gráfico circular
-                    labels = ['Amonestaciones', 'Expulsiones']
-                    sizes = [amon, exp]
-                    colors = ['#FFC107', '#F44336']
-                    explode = (0.05, 0)
-                    
-                    ax1.pie(sizes, explode=explode, labels=labels, colors=colors,
-                           autopct='%1.1f%%', startangle=90, shadow=True,
-                           textprops={'fontsize': 11, 'fontweight': 'bold'})
-                    ax1.set_title(f"Distribución de Tarjetas", fontsize=13, fontweight='bold')
-                    
-                    # Gráfico de barras simple
-                    bars = ax2.bar(labels, sizes, color=colors, alpha=0.8)
-                    ax2.set_ylabel("Cantidad", fontsize=11, fontweight='bold')
-                    ax2.set_title(f"Cantidad por Tipo", fontsize=13, fontweight='bold')
-                    ax2.grid(axis='y', alpha=0.3, linestyle='--')
-                    ax2.set_axisbelow(True)
-                    
-                    # Añadir valores en las barras
-                    for bar in bars:
-                        height = bar.get_height()
-                        ax2.text(bar.get_x() + bar.get_width()/2., height,
-                                f'{int(height)}',
-                                ha='center', va='bottom', fontsize=11, fontweight='bold')
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig)
-                    
-                    # Texto explicativo
-                    st.markdown(f"""
-                    **Resumen:**
-                    - El equipo **{equipo_consulta}** ha recibido un total de **{total}** tarjetas
-                    - **{amon}** tarjetas amarillas (amonestaciones)
-                    - **{exp}** tarjetas rojas (expulsiones)
-                    """)
-                else:
-                    st.info(f"ℹ️ El equipo {equipo_consulta} no tiene tarjetas registradas.")
-                    
-            except Exception as e:
-                st.error(f"❌ Error en consulta: {e}")
+    if equipo:
+        try:
+            conn = sqlite3.connect(DB)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT
+                    SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END)
+                FROM partidos p JOIN tarjetas t ON t.partido_id = p.id
+                WHERE p.equipo_local = ? OR p.equipo_visitante = ?
+            """, (equipo, equipo))
+            amon, exp = cur.fetchone()
+            conn.close()
+            
+            amon = amon or 0
+            exp = exp or 0
+            total = amon + exp
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("⚠️ Amonestaciones", amon)
+            with col2:
+                st.metric("🔴 Expulsiones", exp)
+            with col3:
+                st.metric("📊 Total", total)
+            
+            if total > 0:
+                fig, ax = plt.subplots(figsize=(6, 6))
+                ax.pie([amon, exp], labels=["Amonestaciones", "Expulsiones"], 
+                       colors=["#FFC107", "#F44336"], autopct='%1.1f%%', startangle=90)
+                ax.set_title(f"Distribución - {equipo}")
+                st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # =====================================
-# PESTAÑA 5: ÁRBITRO VS EQUIPO
+# TAB 5: ÁRBITRO VS EQUIPO
 # =====================================
 with tab5:
-    st.markdown('<div class="main-header">Árbitro vs Equipo</div>', unsafe_allow_html=True)
+    st.markdown("## ⚖️ Árbitro vs Equipo")
     
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.markdown("### 🔍 Parámetros de Consulta")
-        
-        arbitro = st.selectbox(
-            "Árbitro",
-            obtener_valores_unicos("arbitro"),
-            key="arbitro_select"
-        )
-        
-        equipo_arb = st.selectbox(
-            "Equipo",
-            obtener_equipos(),
-            key="equipo_arb"
-        )
-        
-        anio_arb = st.text_input("Año (opcional)", placeholder="Ej: 2024", key="anio_arb")
-        campeonato_arb = st.selectbox(
-            "Campeonato (opcional)",
-            [""] + obtener_valores_unicos("campeonato"),
-            format_func=lambda x: "Todos" if x == "" else x,
-            key="campeonato_arb"
-        )
-        
-        if st.button("🔍 Consultar", type="primary", use_container_width=True):
-            pass
+        arbitro = st.selectbox("Árbitro", obtener_valores_unicos("arbitro"), key="tab5_arbitro")
+        equipo = st.selectbox("Equipo", obtener_equipos(), key="tab5_equipo")
+        anio_filtro = st.text_input("Año (opcional)", key="tab5_anio")
+        camp_filtro = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab5_campeonato")
     
     with col2:
-        if arbitro and equipo_arb:
+        if arbitro and equipo:
             try:
                 query = """
-                    SELECT
-                        COUNT(DISTINCT p.id) AS partidos,
-                        SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amonestados,
-                        SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS expulsados
-                    FROM partidos p
-                    LEFT JOIN tarjetas t ON t.partido_id = p.id
-                    WHERE p.arbitro = ?
-                    AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+                    SELECT COUNT(DISTINCT p.id),
+                           SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END),
+                           SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END)
+                    FROM partidos p LEFT JOIN tarjetas t ON t.partido_id = p.id
+                    WHERE p.arbitro = ? AND (p.equipo_local = ? OR p.equipo_visitante = ?)
                 """
-                params = [arbitro, equipo_arb, equipo_arb]
-                
-                if anio_arb:
+                params = [arbitro, equipo, equipo]
+                if anio_filtro:
                     query += " AND SUBSTR(p.fecha,7,4) = ?"
-                    params.append(anio_arb)
-                if campeonato_arb:
+                    params.append(anio_filtro)
+                if camp_filtro:
                     query += " AND p.campeonato = ?"
-                    params.append(campeonato_arb)
+                    params.append(camp_filtro)
                 
                 conn = sqlite3.connect(DB)
                 cur = conn.cursor()
@@ -655,67 +402,25 @@ with tab5:
                 amon = amon or 0
                 exp = exp or 0
                 
-                st.markdown(f"### 📊 Resultados: {arbitro} vs {equipo_arb}")
-                
                 col_a, col_b, col_c = st.columns(3)
                 with col_a:
-                    st.metric(label="⚽ Partidos", value=partidos)
+                    st.metric("⚽ Partidos", partidos)
                 with col_b:
-                    st.metric(label="⚠️ Amonestados", value=amon)
+                    st.metric("⚠️ Amonestados", amon)
                 with col_c:
-                    st.metric(label="🔴 Expulsados", value=exp)
+                    st.metric("🔴 Expulsados", exp)
                 
-                # Gráfico de barras
-                if partidos > 0:
-                    st.markdown("---")
-                    
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    
-                    categorias = ['Amonestados', 'Expulsados']
-                    valores = [amon, exp]
-                    colores = ['#FFC107', '#F44336']
-                    
-                    bars = ax.bar(categorias, valores, color=colores, alpha=0.8)
-                    ax.set_ylabel("Cantidad", fontsize=11, fontweight='bold')
-                    ax.set_title(f"Tarjetas mostradas por {arbitro} a {equipo_arb}", 
-                               fontsize=12, fontweight='bold')
-                    ax.grid(axis='y', alpha=0.3, linestyle='--')
-                    ax.set_axisbelow(True)
-                    
-                    # Añadir valores
-                    for bar in bars:
-                        height = bar.get_height()
-                        if height > 0:
-                            ax.text(bar.get_x() + bar.get_width()/2., height,
-                                   f'{int(height)}',
-                                   ha='center', va='bottom', fontsize=11, fontweight='bold')
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig)
-                
-                # Texto detallado
-                st.markdown("---")
                 st.markdown(f"""
-                **Resumen detallado:**
-                - El árbitro **{arbitro}** ha dirigido **{partidos}** partidos a **{equipo_arb}**
-                - Ha mostrado **{amon}** tarjetas amarillas (amonestaciones)
-                - Ha mostrado **{exp}** tarjetas rojas (expulsiones)
-                - **Total de tarjetas:** {amon + exp}
-                - **Promedio por partido:** {((amon + exp) / partidos):.2f} tarjetas
-                """ if partidos > 0 else f"""
                 **Resumen:**
-                - El árbitro **{arbitro}** no ha dirigido partidos a **{equipo_arb}** con los filtros aplicados.
+                - El árbitro **{arbitro}** dirigió **{partidos}** partidos a **{equipo}**
+                - Mostró **{amon}** tarjetas amarillas y **{exp}** rojas
+                - Total: **{amon + exp}** tarjetas
                 """)
-                
             except Exception as e:
-                st.error(f"❌ Error en consulta: {e}")
+                st.error(f"Error: {e}")
 
 # =====================================
 # FOOTER
 # =====================================
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    🏆 Sistema de Seguimiento de Liga de Fútbol | Base de datos: football_nueva.db
-</div>
-""", unsafe_allow_html=True)
+st.caption("🏆 Sistema de Seguimiento de Liga de Fútbol | football_nueva.db")
