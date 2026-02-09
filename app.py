@@ -543,6 +543,171 @@ def obtener_tabla_posiciones(anio, campeonato=None):
     return df
 
 # =====================================
+# NUEVAS FUNCIONES: CAMPAÑAS Y VERSUS
+# =====================================
+
+def obtener_campania_equipo(equipo, anio=None, campeonato=None):
+    """Obtiene todos los partidos de un equipo con sus goleadores."""
+    query = """
+        SELECT
+            p.fecha,
+            p.campeonato,
+            p.equipo_local,
+            p.equipo_visitante,
+            p.goles_local,
+            p.goles_visitante,
+            CASE
+                WHEN p.equipo_local = ? THEN 'Local'
+                ELSE 'Visitante'
+            END AS lugar,
+            CASE
+                WHEN p.equipo_local = ? AND p.goles_local > p.goles_visitante THEN 'Ganado'
+                WHEN p.equipo_visitante = ? AND p.goles_visitante > p.goles_local THEN 'Ganado'
+                WHEN p.goles_local = p.goles_visitante THEN 'Empatado'
+                ELSE 'Perdido'
+            END AS resultado,
+            CASE
+                WHEN p.equipo_local = ? THEN p.goles_local
+                ELSE p.goles_visitante
+            END AS goles_favor,
+            CASE
+                WHEN p.equipo_local = ? THEN p.goles_visitante
+                ELSE p.goles_local
+            END AS goles_contra
+        FROM partidos p
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+    """
+    params = [equipo, equipo, equipo, equipo, equipo, equipo, equipo]
+    if anio:
+        query += " AND SUBSTR(p.fecha, 7, 4) = ?"
+        params.append(anio)
+    if campeonato:
+        query += " AND p.campeonato = ?"
+        params.append(campeonato)
+    
+    query += " ORDER BY p.fecha DESC"
+    
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def obtener_goleadores_partido(partido_id, equipo):
+    """Obtiene los goleadores de un equipo en un partido específico."""
+    query = """
+        SELECT
+            g.jugador,
+            COUNT(*) AS goles
+        FROM goles g
+        JOIN partidos p ON p.id = g.partido_id
+        WHERE g.partido_id = ?
+        AND (
+            (p.equipo_local = ? AND g.equipo = 'Local')
+            OR 
+            (p.equipo_visitante = ? AND g.equipo = 'Visitante')
+        )
+        GROUP BY g.jugador
+        ORDER BY goles DESC
+    """
+    
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(query, conn, params=(partido_id, equipo, equipo))
+    conn.close()
+    return df
+
+def obtener_historial_versus(equipo1, equipo2, anio=None, campeonato=None):
+    """Obtiene el historial de enfrentamientos entre dos equipos."""
+    query = """
+        SELECT
+            p.fecha,
+            p.campeonato,
+            p.equipo_local,
+            p.equipo_visitante,
+            p.goles_local,
+            p.goles_visitante,
+            CASE
+                WHEN p.goles_local > p.goles_visitante THEN p.equipo_local
+                WHEN p.goles_visitante > p.goles_local THEN p.equipo_visitante
+                ELSE 'Empate'
+            END AS ganador
+        FROM partidos p
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (
+            (p.equipo_local = ? AND p.equipo_visitante = ?)
+            OR
+            (p.equipo_local = ? AND p.equipo_visitante = ?)
+        )
+    """
+    params = [equipo1, equipo2, equipo2, equipo1]
+    
+    if anio:
+        query += " AND SUBSTR(p.fecha, 7, 4) = ?"
+        params.append(anio)
+    if campeonato:
+        query += " AND p.campeonato = ?"
+        params.append(campeonato)
+    
+    query += " ORDER BY p.fecha DESC"
+    
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def obtener_estadisticas_versus(equipo1, equipo2, anio=None, campeonato=None):
+    """Obtiene estadísticas resumen del enfrentamiento entre dos equipos."""
+    query = """
+        SELECT
+            COUNT(*) AS total_partidos,
+            SUM(CASE WHEN p.equipo_local = ? AND p.goles_local > p.goles_visitante THEN 1
+                     WHEN p.equipo_visitante = ? AND p.goles_visitante > p.goles_local THEN 1
+                     ELSE 0 END) AS victorias_eq1,
+            SUM(CASE WHEN p.equipo_local = ? AND p.goles_local > p.goles_visitante THEN 1
+                     WHEN p.equipo_visitante = ? AND p.goles_visitante > p.goles_local THEN 1
+                     ELSE 0 END) AS victorias_eq2,
+            SUM(CASE WHEN p.goles_local = p.goles_visitante THEN 1 ELSE 0 END) AS empates,
+            SUM(CASE WHEN p.equipo_local = ? THEN p.goles_local ELSE p.goles_visitante END) AS goles_eq1,
+            SUM(CASE WHEN p.equipo_local = ? THEN p.goles_visitante ELSE p.goles_local END) AS goles_eq2
+        FROM partidos p
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (
+            (p.equipo_local = ? AND p.equipo_visitante = ?)
+            OR
+            (p.equipo_local = ? AND p.equipo_visitante = ?)
+        )
+    """
+    params = [equipo1, equipo1, equipo2, equipo2, equipo1, equipo1, equipo1, equipo2, equipo2, equipo1]
+    
+    if anio:
+        query += " AND SUBSTR(p.fecha, 7, 4) = ?"
+        params.append(anio)
+    if campeonato:
+        query += " AND p.campeonato = ?"
+        params.append(campeonato)
+    
+    conn = sqlite3.connect(DB)
+    cur = conn.cursor()
+    cur.execute(query, params)
+    resultado = cur.fetchone()
+    conn.close()
+    
+    if resultado:
+        total, v1, v2, emp, g1, g2 = resultado
+        return {
+            "total_partidos": total or 0,
+            "victorias_eq1": v1 or 0,
+            "victorias_eq2": v2 or 0,
+            "empates": emp or 0,
+            "goles_eq1": g1 or 0,
+            "goles_eq2": g2 or 0
+        }
+    return {
+        "total_partidos": 0, "victorias_eq1": 0, "victorias_eq2": 0,
+        "empates": 0, "goles_eq1": 0, "goles_eq2": 0
+    }
+
+# =====================================
 # SIDEBAR: FILTROS
 # =====================================
 st.sidebar.title("FilterWhere ⚽")
@@ -564,9 +729,9 @@ st.sidebar.markdown("---")
 st.sidebar.caption("💡 Filtros aplicados en las primeras pestañas")
 
 # =====================================
-# PESTAÑAS
+# PESTAÑAS (AGREGUÉ 2 NUEVAS)
 # =====================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "📊 Tarjetas x Jugador",
     "🆚 Tarjetas x Rival",
     "📈 Evolución Equipo",
@@ -575,7 +740,9 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🏆 Goleadores Equipo",
     "📊 Rendimiento",
     "🔝 Top Tarjetas",
-    "📋 Posiciones"
+    "📋 Posiciones",
+    "🗓️ Campañas",
+    "⚔️ Versus"
 ])
 
 # Tab 1: Tarjetas por Jugador
@@ -792,6 +959,210 @@ with tab9:
             except ValueError:
                 st.error("Por favor ingresa un año válido (ej: 2024)")
 
-# Footer
+# =====================================
+# TAB 10: CAMPAÑAS (NUEVA)
+# =====================================
+with tab10:
+    st.markdown("## 🗓️ Campaña de un Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("### 🎯 Seleccione Equipo")
+        equipo_campania = st.selectbox("Equipo", obtener_equipos(), key="tab10_equipo")
+        anio_campania = st.text_input("Año (opcional)", placeholder="Ej: 2024", key="tab10_anio")
+        camp_campania = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab10_campeonato")
+        mostrar_goleadores = st.checkbox("⚽ Mostrar goleadores", value=True, key="tab10_goleadores")
+    
+    with col2:
+        if equipo_campania:
+            # Obtener estadísticas generales
+            stats = obtener_estadisticas_rendimiento(equipo_campania, anio_campania or None, camp_campania or None)
+            
+            st.markdown(f"### 📊 Resumen de la Campaña: {equipo_campania}")
+            
+            col_a, col_b, col_c, col_d = st.columns(4)
+            with col_a:
+                st.metric("⚽ Partidos", stats["partidos_jugados"])
+            with col_b:
+                st.metric("✅ Ganados", stats["ganados"])
+            with col_c:
+                st.metric("🤝 Empatados", stats["empatados"])
+            with col_d:
+                st.metric("❌ Perdidos", stats["perdidos"])
+            
+            col_e, col_f, col_g = st.columns(3)
+            with col_e:
+                st.metric("⚽ GF", stats["goles_favor"])
+            with col_f:
+                st.metric("🥅 GC", stats["goles_contra"])
+            with col_g:
+                st.metric("⚖️ DG", stats["diferencia"])
+            
+            st.markdown("---")
+            
+            # Obtener partidos detallados
+            df_partidos = obtener_campania_equipo(equipo_campania, anio_campania or None, camp_campania or None)
+            
+            if df_partidos.empty:
+                st.warning("⚠️ No hay partidos para mostrar con los filtros aplicados.")
+            else:
+                st.markdown(f"### 📋 Partidos ({len(df_partidos)} encontrados)")
+                
+                # Mostrar tabla de partidos
+                partidos_display = []
+                
+                for idx, partido in df_partidos.iterrows():
+                    # Determinar rival
+                    rival = partido['equipo_visitante'] if partido['equipo_local'] == equipo_campania else partido['equipo_local']
+                    
+                    # Formatear resultado
+                    if partido['equipo_local'] == equipo_campania:
+                        resultado = f"{partido['goles_favor']}-{partido['goles_contra']}"
+                    else:
+                        resultado = f"{partido['goles_contra']}-{partido['goles_favor']}"
+                    
+                    # Obtener goleadores si está activado
+                    goleadores_str = ""
+                    if mostrar_goleadores:
+                        conn = sqlite3.connect(DB)
+                        cur = conn.cursor()
+                        cur.execute("SELECT id FROM partidos WHERE fecha = ? AND equipo_local = ? AND equipo_visitante = ?", 
+                                  (partido['fecha'], partido['equipo_local'], partido['equipo_visitante']))
+                        partido_id = cur.fetchone()
+                        conn.close()
+                        
+                        if partido_id:
+                            df_goleadores = obtener_goleadores_partido(partido_id[0], equipo_campania)
+                            if not df_goleadores.empty:
+                                goles_lista = []
+                                for _, gol in df_goleadores.iterrows():
+                                    goles_lista.append(f"{gol['jugador']} ({gol['goles']})")
+                                goleadores_str = ", ".join(goles_lista)
+                    
+                    partidos_display.append({
+                        "Fecha": partido['fecha'],
+                        "Lugar": partido['lugar'],
+                        "Torneo": partido['campeonato'],
+                        "Rival": rival,
+                        "Resultado": resultado,
+                        "GF": partido['goles_favor'],
+                        "GC": partido['goles_contra'],
+                        "⚽": partido['resultado'],
+                        "Goleadores": goleadores_str if goleadores_str else "-"
+                    })
+                
+                df_display = pd.DataFrame(partidos_display)
+                
+                # Reordenar columnas
+                columnas_orden = ["Fecha", "Lugar", "Torneo", "Rival", "Resultado", "GF", "GC", "⚽"]
+                if mostrar_goleadores:
+                    columnas_orden.append("Goleadores")
+                
+                st.dataframe(
+                    df_display[columnas_orden],
+                    column_config={
+                        "GF": st.column_config.NumberColumn("GF", format="%d"),
+                        "GC": st.column_config.NumberColumn("GC", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=500
+                )
+
+# =====================================
+# TAB 11: VERSUS (NUEVA)
+# =====================================
+with tab11:
+    st.markdown("## ⚔️ Versus: Comparativa entre Equipos")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.markdown("### 🎯 Seleccione Equipos")
+        equipo1 = st.selectbox("Equipo 1", obtener_equipos(), key="tab11_equipo1")
+        equipo2 = st.selectbox("Equipo 2", obtener_equipos(), key="tab11_equipo2")
+        
+        if equipo1 == equipo2:
+            st.warning("⚠️ Selecciona dos equipos diferentes")
+        
+        anio_versus = st.text_input("Año (opcional)", placeholder="Ej: 2024", key="tab11_anio")
+        camp_versus = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab11_campeonato")
+    
+    with col2:
+        if equipo1 and equipo2 and equipo1 != equipo2:
+            # Obtener estadísticas resumen
+            stats = obtener_estadisticas_versus(equipo1, equipo2, anio_versus or None, camp_versus or None)
+            
+            st.markdown(f"### 📊 Historial: {equipo1} vs {equipo2}")
+            
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("⚽ Partidos", stats["total_partidos"])
+            with col_b:
+                st.metric(f"✅ {equipo1}", stats["victorias_eq1"])
+            with col_c:
+                st.metric(f"✅ {equipo2}", stats["victorias_eq2"])
+            
+            col_d, col_e, col_f = st.columns(3)
+            with col_d:
+                st.metric("🤝 Empates", stats["empates"])
+            with col_e:
+                st.metric(f"⚽ GF {equipo1}", stats["goles_eq1"])
+            with col_f:
+                st.metric(f"⚽ GF {equipo2}", stats["goles_eq2"])
+            
+            # Calcular porcentajes
+            if stats["total_partidos"] > 0:
+                st.markdown("---")
+                st.markdown("### 📈 Porcentajes")
+                
+                porc_eq1 = (stats["victorias_eq1"] / stats["total_partidos"]) * 100
+                porc_eq2 = (stats["victorias_eq2"] / stats["total_partidos"]) * 100
+                porc_emp = (stats["empates"] / stats["total_partidos"]) * 100
+                
+                col_x, col_y, col_z = st.columns(3)
+                with col_x:
+                    st.metric(f"% {equipo1}", f"{porc_eq1:.1f}%")
+                with col_y:
+                    st.metric(f"% {equipo2}", f"{porc_eq2:.1f}%")
+                with col_z:
+                    st.metric("% Empates", f"{porc_emp:.1f}%")
+            
+            st.markdown("---")
+            
+            # Obtener historial detallado
+            df_historial = obtener_historial_versus(equipo1, equipo2, anio_versus or None, camp_versus or None)
+            
+            if df_historial.empty:
+                st.warning("⚠️ No hay enfrentamientos entre estos equipos con los filtros aplicados.")
+            else:
+                st.markdown(f"### 📋 Historial de Enfrentamientos ({len(df_historial)} partidos)")
+                
+                # Formatear tabla
+                historial_display = []
+                
+                for idx, partido in df_historial.iterrows():
+                    resultado = f"{partido['goles_local']}-{partido['goles_visitante']}"
+                    
+                    historial_display.append({
+                        "Fecha": partido['fecha'],
+                        "Torneo": partido['campeonato'],
+                        "Local": partido['equipo_local'],
+                        "Visitante": partido['equipo_visitante'],
+                        "Resultado": resultado,
+                        "🏆 Ganador": partido['ganador'] if partido['ganador'] != 'Empate' else "🤝 Empate"
+                    })
+                
+                df_display = pd.DataFrame(historial_display)
+                
+                st.dataframe(
+                    df_display,
+                    use_container_width=True,
+                    height=400
+                )
+
+# =====================================
+# FOOTER
+# =====================================
 st.markdown("---")
 st.caption("🏆 Sistema de Seguimiento de Liga de Fútbol ⚽ | football_nueva.db")
