@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from datetime import datetime
 
 # =====================================
 # CONFIGURACIÓN INICIAL
@@ -29,7 +30,32 @@ if not os.path.exists(DB):
     st.stop()
 
 # =====================================
-# FUNCIONES DE BASE DE DATOS (todo en un solo archivo)
+# FUNCIONES AUXILIARES
+# =====================================
+def parse_fecha(fecha_str):
+    """Convierte fecha de 'dd/mm/yyyy' a datetime para ordenar correctamente."""
+    try:
+        return pd.to_datetime(fecha_str, format='%d/%m/%Y')
+    except:
+        return pd.NaT
+
+def formatear_goleador(nombre, goles):
+    """Formatea nombre: primer letra del nombre + apellido, con (n) si hizo más de 1 gol."""
+    if not nombre or pd.isna(nombre):
+        return "-"
+    
+    partes = nombre.strip().split()
+    if len(partes) >= 2:
+        inicial_nombre = partes[0][0].upper() + "."
+        apellido = " ".join(partes[1:])
+        if goles > 1:
+            return f"{inicial_nombre}{apellido} ({goles})"
+        else:
+            return f"{inicial_nombre}{apellido}"
+    return nombre
+
+# =====================================
+# FUNCIONES DE BASE DE DATOS
 # =====================================
 @st.cache_data(ttl=300)
 def obtener_valores_unicos(columna, tabla="partidos"):
@@ -120,42 +146,69 @@ def obtener_tarjetas_por_jugador(anio=None, campeonato=None, equipo=None, solo_e
     conn.close()
     return df
 
-def obtener_equipo_jugador(jugador):
-    conn = sqlite3.connect(DB)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT DISTINCT
-            CASE
-                WHEN t.equipo = 'Local' THEN p.equipo_local
-                WHEN t.equipo = 'Visitante' THEN p.equipo_visitante
-            END AS equipo_jugador
-        FROM partidos p
-        JOIN tarjetas t ON t.partido_id = p.id
-        WHERE t.jugador = ?
-        LIMIT 1
-    """, (jugador,))
-    resultado = cur.fetchone()
-    conn.close()
-    return resultado[0] if resultado else "Desconocido"
-
-def obtener_tarjetas_por_rival(jugador):
+# NUEVA FUNCIÓN: Tarjetas por equipo (no por jugador)
+def obtener_tarjetas_por_equipo(anio=None, campeonato=None, equipo=None, solo_expulsados=False):
+    """Obtiene tarjetas agrupadas por equipo (no por jugador)."""
     query = """
         SELECT
             CASE
-                WHEN t.equipo = 'Local' THEN p.equipo_visitante
-                WHEN t.equipo = 'Visitante' THEN p.equipo_local
-            END AS rival,
-            COUNT(*) AS total_tarjetas,
+                WHEN t.equipo = 'Local' THEN p.equipo_local
+                WHEN t.equipo = 'Visitante' THEN p.equipo_visitante
+            END AS equipo,
             SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
             SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
         FROM partidos p
-        JOIN tarjetas t ON t.partido_id = p.id
-        WHERE t.jugador = ?
-        GROUP BY rival
-        ORDER BY total_tarjetas DESC
+        INNER JOIN tarjetas t ON t.partido_id = p.id
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
     """
+    params = []
+    if anio:
+        query += " AND SUBSTR(p.fecha, 7, 4) = ?"
+        params.append(anio)
+    if campeonato:
+        query += " AND p.campeonato = ?"
+        params.append(campeonato)
+    if equipo:
+        query += " AND (p.equipo_local = ? OR p.equipo_visitante = ?)"
+        params.extend([equipo, equipo])
+    if solo_expulsados:
+        query += " AND t.tipo = 'Expulsado'"
+    
+    query += """
+        GROUP BY equipo
+        HAVING (amon + exp) > 0
+        ORDER BY (amon + exp) DESC, equipo
+    """
+    
     conn = sqlite3.connect(DB)
-    df = pd.read_sql_query(query, conn, params=(jugador,))
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def obtener_tarjetas_por_rival_equipo(equipo):
+    """Obtiene tarjetas recibidas por un equipo contra cada rival."""
+    query = """
+        SELECT
+            CASE
+                WHEN (p.equipo_local = ? AND t.equipo = 'Local') THEN p.equipo_visitante
+                WHEN (p.equipo_visitante = ? AND t.equipo = 'Visitante') THEN p.equipo_local
+            END AS rival,
+            SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amon,
+            SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
+        FROM partidos p
+        INNER JOIN tarjetas t ON t.partido_id = p.id
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (
+            (p.equipo_local = ? AND t.equipo = 'Local')
+            OR
+            (p.equipo_visitante = ? AND t.equipo = 'Visitante')
+        )
+        GROUP BY rival
+        ORDER BY (amon + exp) DESC
+    """
+    
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(query, conn, params=(equipo, equipo, equipo, equipo))
     conn.close()
     return df
 
@@ -233,14 +286,12 @@ def obtener_resumen_equipo(equipo):
         "total": (amon or 0) + (exp or 0)
     }
 
+# CORREGIDO: Goles por jugador sin filtrar por equipo
 def obtener_goles_por_jugador(anio=None, campeonato=None, equipo=None):
+    """Obtiene goles por jugador, sin importar para qué equipo jugó."""
     query = """
         SELECT
             g.jugador,
-            CASE
-                WHEN g.equipo = 'Local' THEN p.equipo_local
-                WHEN g.equipo = 'Visitante' THEN p.equipo_visitante
-            END AS equipo_jugador,
             COUNT(*) AS goles
         FROM partidos p
         INNER JOIN goles g ON g.partido_id = p.id
@@ -256,11 +307,13 @@ def obtener_goles_por_jugador(anio=None, campeonato=None, equipo=None):
     if equipo:
         query += " AND (p.equipo_local = ? OR p.equipo_visitante = ?)"
         params.extend([equipo, equipo])
+    
     query += """
-        GROUP BY g.jugador, equipo_jugador
+        GROUP BY g.jugador
         HAVING goles > 0
         ORDER BY goles DESC, g.jugador
     """
+    
     conn = sqlite3.connect(DB)
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
@@ -437,29 +490,6 @@ def obtener_jugadores_mas_expulsados(limite=20):
     conn.close()
     return df
 
-def obtener_jugadores_mas_tarjetas(limite=20):
-    query = """
-        SELECT
-            t.jugador,
-            CASE
-                WHEN t.equipo = 'Local' THEN p.equipo_local
-                WHEN t.equipo = 'Visitante' THEN p.equipo_visitante
-            END AS equipo,
-            SUM(CASE WHEN t.tipo = 'Amonestado' THEN 1 ELSE 0 END) AS amonestaciones,
-            SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS expulsiones,
-            COUNT(*) AS total_tarjetas
-        FROM partidos p
-        INNER JOIN tarjetas t ON t.partido_id = p.id
-        WHERE t.jugador IS NOT NULL AND TRIM(t.jugador) <> ''
-        GROUP BY t.jugador, equipo
-        ORDER BY total_tarjetas DESC
-        LIMIT ?
-    """
-    conn = sqlite3.connect(DB)
-    df = pd.read_sql_query(query, conn, params=(limite,))
-    conn.close()
-    return df
-
 def calcular_puntos(goles_local, goles_visitante, equipo_local, equipo_visitante, equipo_buscar, anio):
     puntos_victoria = 3 if int(anio) >= 1995 else 2
     if goles_local > goles_visitante:
@@ -550,6 +580,7 @@ def obtener_campania_equipo(equipo, anio=None, campeonato=None):
     """Obtiene todos los partidos de un equipo con sus goleadores."""
     query = """
         SELECT
+            p.id,
             p.fecha,
             p.campeonato,
             p.equipo_local,
@@ -729,7 +760,7 @@ st.sidebar.markdown("---")
 st.sidebar.caption("💡 Filtros aplicados en las primeras pestañas")
 
 # =====================================
-# PESTAÑAS (AGREGUÉ 2 NUEVAS)
+# PESTAÑAS
 # =====================================
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "📊 Tarjetas x Jugador",
@@ -765,20 +796,24 @@ with tab1:
             st.metric("📊 Total", int(df_display['Total'].sum()))
         st.dataframe(df_display, use_container_width=True, height=400)
 
-# Tab 2: Resumen por Rival
+# Tab 2: Tarjetas por Rival (AHORA POR EQUIPO)
 with tab2:
-    st.markdown("## 🆚 Resumen de Tarjetas por Rival")
+    st.markdown("## 🆚 Tarjetas por Rival (por Equipo)")
+    
     col1, col2 = st.columns([1, 3])
+    
     with col1:
-        jugador = st.selectbox("Selecciona jugador", obtener_jugadores(), key="tab2_jugador")
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab2_equipo")
+    
     with col2:
-        if jugador:
-            equipo_jug = obtener_equipo_jugador(jugador)
-            df_rivales = obtener_tarjetas_por_rival(jugador)
+        if equipo:
+            df_rivales = obtener_tarjetas_por_rival_equipo(equipo)
+            
             if df_rivales.empty:
-                st.warning("No hay datos para este jugador.")
+                st.warning("No hay datos para este equipo.")
             else:
-                st.markdown(f"**Jugador:** {jugador} | **Equipo:** {equipo_jug}")
+                st.markdown(f"### 📊 Tarjetas recibidas por {equipo} contra cada rival")
+                
                 col_a, col_b, col_c, col_d = st.columns(4)
                 with col_a:
                     st.metric("Rivales", len(df_rivales))
@@ -787,19 +822,39 @@ with tab2:
                 with col_c:
                     st.metric("🔴 Expulsiones", int(df_rivales['exp'].sum()))
                 with col_d:
-                    st.metric("📊 Total", int(df_rivales['total_tarjetas'].sum()))
-                df_display = df_rivales.rename(columns={"rival": "Rival", "amon": "Amonestaciones", "exp": "Expulsiones", "total_tarjetas": "Total"})
-                st.dataframe(df_display, use_container_width=True, height=350)
+                    st.metric("📊 Total", int((df_rivales['amon'] + df_rivales['exp']).sum()))
+                
+                df_display = df_rivales.rename(columns={
+                    "rival": "Rival",
+                    "amon": "Amonestaciones",
+                    "exp": "Expulsiones"
+                })
+                df_display["Total"] = df_display["Amonestaciones"] + df_display["Expulsiones"]
+                
+                st.dataframe(
+                    df_display[["Rival", "Amonestaciones", "Expulsiones", "Total"]],
+                    column_config={
+                        "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", format="%d"),
+                        "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", format="%d"),
+                        "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=350
+                )
 
 # Tab 3: Evolución por Equipo
 with tab3:
     st.markdown("## 📈 Evolución Anual de Tarjetas por Equipo")
+    
     col1, col2 = st.columns([1, 3])
+    
     with col1:
         equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab3_equipo")
+    
     with col2:
         if equipo:
             df = obtener_evolucion_equipo(equipo)
+            
             if df.empty:
                 st.info("No hay datos para este equipo.")
             else:
@@ -810,6 +865,10 @@ with tab3:
                     st.metric("⚠️ Amonestaciones", int(df['amon'].sum()))
                 with col_c:
                     st.metric("🔴 Expulsiones", int(df['exp'].sum()))
+                
+                st.markdown("---")
+                
+                # Gráfico
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.plot(df["anio"], df["amon"], marker="o", label="Amonestaciones", color="#FFC107")
                 ax.plot(df["anio"], df["exp"], marker="s", label="Expulsiones", color="#F44336")
@@ -819,17 +878,21 @@ with tab3:
                 ax.legend()
                 ax.grid(True, alpha=0.3)
                 st.pyplot(fig)
+                
                 st.dataframe(df, use_container_width=True)
 
 # Tab 4: Árbitro vs Equipo
 with tab4:
     st.markdown("## ⚖️ Árbitro vs Equipo")
+    
     col1, col2 = st.columns([1, 2])
+    
     with col1:
         arbitro = st.selectbox("Árbitro", obtener_valores_unicos("arbitro"), key="tab4_arbitro")
         equipo = st.selectbox("Equipo", obtener_equipos(), key="tab4_equipo")
         anio_filtro = st.text_input("Año (opcional)", key="tab4_anio")
         camp_filtro = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab4_campeonato")
+    
     with col2:
         if arbitro and equipo:
             stats = obtener_estadisticas_arbitro_equipo(arbitro, equipo, anio_filtro or None, camp_filtro or None)
@@ -846,50 +909,78 @@ with tab4:
             - Mostró **{stats['amonestados']}** tarjetas amarillas y **{stats['expulsados']}** rojas
             """)
 
-# Tab 5: Goles por Jugador
+# Tab 5: Goles por Jugador (CORREGIDO)
 with tab5:
     st.markdown("## ⚽ Goles por Jugador")
+    
     df = obtener_goles_por_jugador(anio, campeonato, equipo_filtro)
+    
     if df.empty:
         st.warning("⚠️ No se encontraron datos.")
     else:
-        df_display = df.rename(columns={"jugador": "Jugador", "equipo_jugador": "Equipo", "goles": "Goles"})
+        df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
+        
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Jugadores", len(df_display))
         with col2:
             st.metric("⚽ Total Goles", int(df_display['Goles'].sum()))
-        st.dataframe(df_display, use_container_width=True, height=400)
+        
+        st.dataframe(
+            df_display,
+            column_config={
+                "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
+            },
+            use_container_width=True,
+            height=400
+        )
 
 # Tab 6: Goleadores por Equipo
 with tab6:
     st.markdown("## 🏆 Goleadores por Equipo")
+    
     col1, col2 = st.columns([1, 3])
+    
     with col1:
         equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab6_equipo")
+    
     with col2:
         if equipo:
             df = obtener_goleadores_por_equipo(equipo)
+            
             if df.empty:
                 st.info("No hay datos para este equipo.")
             else:
                 st.markdown(f"### 🥅 Goleadores de {equipo}")
+                
                 col_a, col_b = st.columns(2)
                 with col_a:
                     st.metric("Jugadores", len(df))
                 with col_b:
                     st.metric("⚽ Total Goles", int(df['goles'].sum()))
+                
                 df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
-                st.dataframe(df_display, use_container_width=True, height=350)
+                
+                st.dataframe(
+                    df_display,
+                    column_config={
+                        "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=350
+                )
 
 # Tab 7: Rendimiento
 with tab7:
     st.markdown("## 📊 Rendimiento por Equipo")
+    
     col1, col2 = st.columns([1, 3])
+    
     with col1:
         equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab7_equipo")
         anio_rend = st.text_input("Año (opcional)", key="tab7_anio")
         camp_rend = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab7_campeonato")
+    
     with col2:
         if equipo:
             stats = obtener_estadisticas_rendimiento(equipo, anio_rend or None, camp_rend or None)
@@ -909,59 +1000,118 @@ with tab7:
                 st.metric("🥅 GC", stats["goles_contra"])
             with col_g:
                 st.metric("⚖️ DG", stats["diferencia"])
+            
             st.markdown("---")
             st.markdown("### 📋 Partidos recientes")
             df_partidos = obtener_rendimiento_equipo(equipo, anio_rend or None, camp_rend or None)
+            
             if not df_partidos.empty:
-                df_display = df_partidos.rename(columns={"fecha": "Fecha", "campeonato": "Campeonato", "equipo_local": "Local", "equipo_visitante": "Visitante", "goles_local": "GL", "goles_visitante": "GV", "resultado": "Resultado"})
+                df_display = df_partidos.rename(columns={
+                    "fecha": "Fecha",
+                    "campeonato": "Campeonato",
+                    "equipo_local": "Local",
+                    "equipo_visitante": "Visitante",
+                    "goles_local": "GL",
+                    "goles_visitante": "GV",
+                    "resultado": "Resultado"
+                })
                 st.dataframe(df_display.head(20), use_container_width=True)
 
-# Tab 8: Top Tarjetas
+# Tab 8: Top Tarjetas (ELIMINADO "Más Tarjetas Totales")
 with tab8:
     st.markdown("## 🔝 Jugadores con más Tarjetas")
-    col1, col2, col3 = st.columns(3)
+    
+    col1, col2 = st.columns(2)
+    
     with col1:
         st.markdown("### ⚠️ Más Amonestados")
         df_amon = obtener_jugadores_mas_amonestados(10)
         if not df_amon.empty:
             df_amon = df_amon.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "amonestaciones": "Amonestaciones"})
             st.dataframe(df_amon, use_container_width=True, hide_index=True)
+    
     with col2:
         st.markdown("### 🔴 Más Expulsados")
         df_exp = obtener_jugadores_mas_expulsados(10)
         if not df_exp.empty:
             df_exp = df_exp.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "expulsiones": "Expulsiones"})
             st.dataframe(df_exp, use_container_width=True, hide_index=True)
-    with col3:
-        st.markdown("### 📊 Más Tarjetas Totales")
-        df_total = obtener_jugadores_mas_tarjetas(10)
-        if not df_total.empty:
-            df_total = df_total.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "amonestaciones": "Amonestaciones", "expulsiones": "Expulsiones", "total_tarjetas": "Total"})
-            st.dataframe(df_total, use_container_width=True, hide_index=True)
 
-# Tab 9: Tabla de Posiciones
+# Tab 9: Tabla de Posiciones (HISTORIAL COMPLETO PRIMERO)
 with tab9:
     st.markdown("## 📋 Tabla de Posiciones")
+    
+    # Mostrar historial completo primero
+    st.markdown("### 📊 Historial Completo (últimos años)")
+    
+    # Obtener años disponibles
+    conn = sqlite3.connect(DB)
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT SUBSTR(fecha, 7, 4) AS anio FROM partidos ORDER BY anio DESC LIMIT 10")
+    anios_disponibles = [r[0] for r in cur.fetchall()]
+    conn.close()
+    
+    # Mostrar tablas de los últimos 5 años
+    for anio_pos in anios_disponibles[:5]:
+        df_pos = obtener_tabla_posiciones(anio_pos)
+        
+        if not df_pos.empty:
+            with st.expander(f"📅 {anio_pos} - Sistema: {'3 puntos' if int(anio_pos) >= 1995 else '2 puntos'}"):
+                st.dataframe(
+                    df_pos,
+                    column_config={
+                        "PJ": st.column_config.NumberColumn("PJ", format="%d"),
+                        "PG": st.column_config.NumberColumn("PG", format="%d"),
+                        "PE": st.column_config.NumberColumn("PE", format="%d"),
+                        "PP": st.column_config.NumberColumn("PP", format="%d"),
+                        "GF": st.column_config.NumberColumn("GF", format="%d"),
+                        "GC": st.column_config.NumberColumn("GC", format="%d"),
+                        "DG": st.column_config.NumberColumn("DG", format="%d"),
+                        "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=400
+                )
+    
+    st.markdown("---")
+    
+    # Filtros para búsqueda específica
     col1, col2 = st.columns([1, 3])
+    
     with col1:
-        anio_pos = st.text_input("Año", value="2024", key="tab9_anio")
-        camp_pos = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab9_campeonato")
+        anio_pos = st.text_input("Buscar año específico", value="", key="tab9_anio_buscar")
+        camp_pos = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab9_campeonato_buscar")
+    
     with col2:
         if anio_pos:
             try:
                 df_pos = obtener_tabla_posiciones(anio_pos, camp_pos or None)
+                
                 if df_pos.empty:
                     st.warning("No hay datos para este año/campeonato.")
                 else:
                     sistema = "3 puntos por victoria" if int(anio_pos) >= 1995 else "2 puntos por victoria"
                     st.info(f"📅 Año: {anio_pos} | Sistema de puntos: {sistema}")
-                    st.dataframe(df_pos, use_container_width=True, height=500)
+                    
+                    st.dataframe(
+                        df_pos,
+                        column_config={
+                            "PJ": st.column_config.NumberColumn("PJ", format="%d"),
+                            "PG": st.column_config.NumberColumn("PG", format="%d"),
+                            "PE": st.column_config.NumberColumn("PE", format="%d"),
+                            "PP": st.column_config.NumberColumn("PP", format="%d"),
+                            "GF": st.column_config.NumberColumn("GF", format="%d"),
+                            "GC": st.column_config.NumberColumn("GC", format="%d"),
+                            "DG": st.column_config.NumberColumn("DG", format="%d"),
+                            "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
+                        },
+                        use_container_width=True,
+                        height=500
+                    )
             except ValueError:
                 st.error("Por favor ingresa un año válido (ej: 2024)")
 
-# =====================================
-# TAB 10: CAMPAÑAS (NUEVA)
-# =====================================
+# Tab 10: Campañas (CON FORMATO DE GOLEADORES CORREGIDO)
 with tab10:
     st.markdown("## 🗓️ Campaña de un Equipo")
     
@@ -1025,20 +1175,12 @@ with tab10:
                     # Obtener goleadores si está activado
                     goleadores_str = ""
                     if mostrar_goleadores:
-                        conn = sqlite3.connect(DB)
-                        cur = conn.cursor()
-                        cur.execute("SELECT id FROM partidos WHERE fecha = ? AND equipo_local = ? AND equipo_visitante = ?", 
-                                  (partido['fecha'], partido['equipo_local'], partido['equipo_visitante']))
-                        partido_id = cur.fetchone()
-                        conn.close()
-                        
-                        if partido_id:
-                            df_goleadores = obtener_goleadores_partido(partido_id[0], equipo_campania)
-                            if not df_goleadores.empty:
-                                goles_lista = []
-                                for _, gol in df_goleadores.iterrows():
-                                    goles_lista.append(f"{gol['jugador']} ({gol['goles']})")
-                                goleadores_str = ", ".join(goles_lista)
+                        df_goleadores = obtener_goleadores_partido(partido['id'], equipo_campania)
+                        if not df_goleadores.empty:
+                            goles_lista = []
+                            for _, gol in df_goleadores.iterrows():
+                                goles_lista.append(formatear_goleador(gol['jugador'], gol['goles']))
+                            goleadores_str = ", ".join(goles_lista)
                     
                     partidos_display.append({
                         "Fecha": partido['fecha'],
@@ -1069,9 +1211,7 @@ with tab10:
                     height=500
                 )
 
-# =====================================
-# TAB 11: VERSUS (NUEVA)
-# =====================================
+# Tab 11: Versus
 with tab11:
     st.markdown("## ⚔️ Versus: Comparativa entre Equipos")
     
