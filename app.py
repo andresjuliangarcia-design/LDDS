@@ -1250,7 +1250,7 @@ with tab9:
             st.dataframe(top_gf, use_container_width=True, hide_index=False)
         
         with col3:
-            st.markdown("### 🥅 Mejor Diferencia de Gol")
+            st.markdown("### 🥅 Mejor Dif. de Gol")
             top_dg = df_posiciones.sort_values("DG", ascending=False).head(5)[["Equipo", "DG"]].reset_index(drop=True)
             top_dg.index = top_dg.index + 1
             st.dataframe(top_dg, use_container_width=True, hide_index=False)
@@ -1617,6 +1617,7 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
 
 
