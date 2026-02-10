@@ -286,7 +286,6 @@ def obtener_resumen_equipo(equipo):
         "total": (amon or 0) + (exp or 0)
     }
 
-# CORREGIDO: Goles por jugador sin filtrar por equipo
 def obtener_goles_por_jugador(anio=None, campeonato=None, equipo=None):
     """Obtiene goles por jugador, sin importar para qué equipo jugó."""
     query = """
@@ -502,78 +501,103 @@ def calcular_puntos(goles_local, goles_visitante, equipo_local, equipo_visitante
     else:
         return (1, 0, 1, 0)
 
-def obtener_tabla_posiciones(anio, campeonato=None):
+def obtener_tabla_historica_acumulada():
+    """Obtiene tabla de posiciones acumulada de TODOS los partidos históricos."""
     conn = sqlite3.connect(DB)
-    query_equipos = """
-        SELECT DISTINCT equipo FROM (
-            SELECT equipo_local AS equipo FROM partidos
-            UNION
-            SELECT equipo_visitante FROM partidos
-        ) WHERE equipo IS NOT NULL AND equipo <> ''
-    """
-    equipos = pd.read_sql_query(query_equipos, conn)
-    equipos_list = equipos['equipo'].tolist()
+    cur = conn.cursor()
     
-    query_partidos = """
+    # Obtener todos los partidos con sus fechas
+    cur.execute("""
         SELECT
+            p.fecha,
             p.equipo_local,
-            p.equipo_visitante,
             p.goles_local,
-            p.goles_visitante,
-            SUBSTR(p.fecha, 7, 4) AS anio
+            p.equipo_visitante,
+            p.goles_visitante
         FROM partidos p
-        WHERE SUBSTR(p.fecha, 7, 4) = ?
-    """
-    params = [anio]
-    if campeonato:
-        query_partidos += " AND p.campeonato = ?"
-        params.append(campeonato)
-    partidos = pd.read_sql_query(query_partidos, conn, params=params)
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND p.equipo_local IS NOT NULL AND p.equipo_visitante IS NOT NULL
+        ORDER BY p.fecha
+    """)
+    
+    partidos = cur.fetchall()
     conn.close()
     
-    estadisticas = []
-    for equipo in equipos_list:
-        pj = pg = pe = pp = gf = gc = puntos = 0
-        for _, partido in partidos.iterrows():
-            if partido['equipo_local'] == equipo or partido['equipo_visitante'] == equipo:
-                pj += 1
-                pts, ganado, empate, perdido = calcular_puntos(
-                    partido['goles_local'],
-                    partido['goles_visitante'],
-                    partido['equipo_local'],
-                    partido['equipo_visitante'],
-                    equipo,
-                    anio
-                )
-                puntos += pts
-                pg += ganado
-                pe += empate
-                pp += perdido
-                if partido['equipo_local'] == equipo:
-                    gf += partido['goles_local'] or 0
-                    gc += partido['goles_visitante'] or 0
-                else:
-                    gf += partido['goles_visitante'] or 0
-                    gc += partido['goles_local'] or 0
-        if pj > 0:
-            estadisticas.append({
-                'Equipo': equipo,
-                'PJ': pj,
-                'PG': pg,
-                'PE': pe,
-                'PP': pp,
-                'GF': gf,
-                'GC': gc,
-                'DG': gf - gc,
-                'Puntos': puntos
-            })
+    # Diccionario para acumular estadísticas por equipo
+    tabla = {}
     
-    df = pd.DataFrame(estadisticas)
-    if not df.empty:
-        df = df.sort_values(['Puntos', 'DG', 'GF'], ascending=[False, False, False])
-        df = df.reset_index(drop=True)
-        df.index = df.index + 1
-    return df
+    for partido in partidos:
+        fecha, local, gl, visitante, gv = partido
+        
+        # Convertir goles a enteros (manejar NULL)
+        try:
+            gl = int(gl) if gl is not None else 0
+        except:
+            gl = 0
+        try:
+            gv = int(gv) if gv is not None else 0
+        except:
+            gv = 0
+        
+        # Obtener año para determinar sistema de puntos
+        try:
+            anio = int(fecha.split('/')[2]) if fecha else 0
+        except:
+            anio = 0
+        
+        # Inicializar equipos si no existen
+        if local not in tabla:
+            tabla[local] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "Puntos": 0}
+        if visitante not in tabla:
+            tabla[visitante] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "Puntos": 0}
+        
+        # Acumular partidos jugados y goles
+        tabla[local]["PJ"] += 1
+        tabla[visitante]["PJ"] += 1
+        tabla[local]["GF"] += gl
+        tabla[local]["GC"] += gv
+        tabla[visitante]["GF"] += gv
+        tabla[visitante]["GC"] += gl
+        
+        # Determinar puntos según el año
+        puntos_victoria = 3 if anio >= 1995 else 2
+        
+        # Asignar resultados y puntos
+        if gl > gv:
+            tabla[local]["PG"] += 1
+            tabla[visitante]["PP"] += 1
+            tabla[local]["Puntos"] += puntos_victoria
+        elif gl < gv:
+            tabla[visitante]["PG"] += 1
+            tabla[local]["PP"] += 1
+            tabla[visitante]["Puntos"] += puntos_victoria
+        else:
+            tabla[local]["PE"] += 1
+            tabla[visitante]["PE"] += 1
+            tabla[local]["Puntos"] += 1
+            tabla[visitante]["Puntos"] += 1
+    
+    # Convertir a lista ordenada
+    posiciones = []
+    for equipo, datos in tabla.items():
+        dg = datos["GF"] - datos["GC"]
+        posiciones.append((
+            equipo,
+            datos["PJ"],
+            datos["PG"],
+            datos["PE"],
+            datos["PP"],
+            datos["GF"],
+            datos["GC"],
+            dg,
+            datos["Puntos"]
+        ))
+    
+    # Ordenar por: Puntos, DG, GF (descendente)
+    posiciones.sort(key=lambda x: (x[8], x[7], x[5]), reverse=True)
+    
+    return posiciones, len(partidos)
+
 
 # =====================================
 # NUEVAS FUNCIONES: CAMPAÑAS Y VERSUS
@@ -1047,79 +1071,64 @@ with tab8:
 
 # Tab 9: Tabla de Posiciones (HISTORIAL COMPLETO PRIMERO)
 with tab9:
-    st.markdown("## 📋 Tabla de Posiciones")
+    st.markdown("## 📋 Tabla Histórica - Todos los Partidos")
     
-    # Mostrar historial completo primero
-    st.markdown("### 📊 Historial Completo (últimos años)")
+    # Obtener datos acumulados
+    posiciones, total_partidos = obtener_tabla_historica_acumulada()
     
-    # Obtener años disponibles
-    conn = sqlite3.connect(DB)
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT SUBSTR(fecha, 7, 4) AS anio FROM partidos ORDER BY anio DESC LIMIT 10")
-    anios_disponibles = [r[0] for r in cur.fetchall()]
-    conn.close()
-    
-    # Mostrar tablas de los últimos 5 años
-    for anio_pos in anios_disponibles[:5]:
-        df_pos = obtener_tabla_posiciones(anio_pos)
+    if not posiciones:
+        st.warning("⚠️ No hay datos disponibles.")
+    else:
+        # Mostrar métrica de partidos procesados
+        st.metric(label="Partidos Procesados", value=total_partidos)
         
-        if not df_pos.empty:
-            with st.expander(f"📅 {anio_pos} - Sistema: {'3 puntos' if int(anio_pos) >= 1995 else '2 puntos'}"):
-                st.dataframe(
-                    df_pos,
-                    column_config={
-                        "PJ": st.column_config.NumberColumn("PJ", format="%d"),
-                        "PG": st.column_config.NumberColumn("PG", format="%d"),
-                        "PE": st.column_config.NumberColumn("PE", format="%d"),
-                        "PP": st.column_config.NumberColumn("PP", format="%d"),
-                        "GF": st.column_config.NumberColumn("GF", format="%d"),
-                        "GC": st.column_config.NumberColumn("GC", format="%d"),
-                        "DG": st.column_config.NumberColumn("DG", format="%d"),
-                        "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
-                    },
-                    use_container_width=True,
-                    height=400,
-                    hide_index=True
-                )
-    
-    st.markdown("---")
-    
-    # Filtros para búsqueda específica
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        anio_pos = st.text_input("Buscar año específico", value="", key="tab9_anio_buscar")
-        camp_pos = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab9_campeonato_buscar")
-    
-    with col2:
-        if anio_pos:
-            try:
-                df_pos = obtener_tabla_posiciones(anio_pos, camp_pos or None)
-                
-                if df_pos.empty:
-                    st.warning("No hay datos para este año/campeonato.")
-                else:
-                    sistema = "3 puntos por victoria" if int(anio_pos) >= 1995 else "2 puntos por victoria"
-                    st.info(f"📅 Año: {anio_pos} | Sistema de puntos: {sistema}")
-                    
-                    st.dataframe(
-                        df_pos,
-                        column_config={
-                            "PJ": st.column_config.NumberColumn("PJ", format="%d"),
-                            "PG": st.column_config.NumberColumn("PG", format="%d"),
-                            "PE": st.column_config.NumberColumn("PE", format="%d"),
-                            "PP": st.column_config.NumberColumn("PP", format="%d"),
-                            "GF": st.column_config.NumberColumn("GF", format="%d"),
-                            "GC": st.column_config.NumberColumn("GC", format="%d"),
-                            "DG": st.column_config.NumberColumn("DG", format="%d"),
-                            "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
-                        },
-                        use_container_width=True,
-                        height=500,
-                        hide_index=True
-                    )
-            except ValueError:
-                st.error("Por favor ingresa un año válido (ej: 2024)")
+        st.markdown("---")
+        
+        # Convertir a DataFrame para mejor visualización
+        df_posiciones = pd.DataFrame(posiciones, columns=[
+            "Equipo", "PJ", "PG", "PE", "PP", "GF", "GC", "DG", "Puntos"
+        ])
+        
+        # Mostrar tabla completa
+        st.dataframe(
+            df_posiciones,
+            column_config={
+                "PJ": st.column_config.NumberColumn("PJ", format="%d"),
+                "PG": st.column_config.NumberColumn("PG", format="%d"),
+                "PE": st.column_config.NumberColumn("PE", format="%d"),
+                "PP": st.column_config.NumberColumn("PP", format="%d"),
+                "GF": st.column_config.NumberColumn("GF", format="%d"),
+                "GC": st.column_config.NumberColumn("GC", format="%d"),
+                "DG": st.column_config.NumberColumn("DG", format="%d"),
+                "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
+            },
+            use_container_width=True,
+            height=600,
+            hide_index=True
+        )
+        
+        st.markdown("---")
+        
+        # Estadísticas adicionales
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("### 🏆 Top 5 Equipos")
+            top5 = df_posiciones.head(5)[["Equipo", "Puntos"]].reset_index(drop=True)
+            top5.index = top5.index + 1
+            st.dataframe(top5, use_container_width=True, hide_index=False)
+        
+        with col2:
+            st.markdown("### ⚽ Más Goles a Favor")
+            top_gf = df_posiciones.sort_values("GF", ascending=False).head(5)[["Equipo", "GF"]].reset_index(drop=True)
+            top_gf.index = top_gf.index + 1
+            st.dataframe(top_gf, use_container_width=True, hide_index=False)
+        
+        with col3:
+            st.markdown("### 🥅 Mejor Diferencia de Gol")
+            top_dg = df_posiciones.sort_values("DG", ascending=False).head(5)[["Equipo", "DG"]].reset_index(drop=True)
+            top_dg.index = top_dg.index + 1
+            st.dataframe(top_dg, use_container_width=True, hide_index=False)
 
 # Tab 10: Campañas (CON ORDEN CORREGIDO Y SIN ID)
 with tab10:
