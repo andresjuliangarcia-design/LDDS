@@ -889,8 +889,10 @@ def obtener_evolucion_puntos_equipo(equipo):
     return df
 
 # =====================================
-# SIDEBAR: FILTROS
+# SIDEBAR: LOGO + FILTROS
 # =====================================
+st.sidebar.image("logo.png", width=200)
+st.sidebar.markdown("---")
 st.sidebar.title("FilterWhere ⚽")
 anio = st.sidebar.text_input("Año", placeholder="Ej: 2024", key="sidebar_anio")
 campeonato = st.sidebar.selectbox(
@@ -1615,4 +1617,5 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
