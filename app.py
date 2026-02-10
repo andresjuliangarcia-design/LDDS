@@ -38,21 +38,43 @@ def parse_fecha(fecha_str):
         return pd.to_datetime(fecha_str, format='%d/%m/%Y')
     except:
         return pd.NaT
-
+        
 def formatear_goleador(nombre, goles):
-    """Formatea nombre: primer letra del nombre + apellido, con (n) si hizo más de 1 gol."""
+    """Formatea nombre: inicial del primer nombre + apellido, con (n) si hizo más de 1 gol.
+    Maneja formato: 'Apellido, Nombre' → 'C. Apellido'"""
     if not nombre or pd.isna(nombre):
         return "-"
     
-    partes = nombre.strip().split()
-    if len(partes) >= 2:
-        inicial_nombre = partes[0][0].upper() + "."
-        apellido = " ".join(partes[1:])
-        if goles > 1:
-            return f"{inicial_nombre}{apellido} ({goles})"
+    nombre = nombre.strip()
+    
+    # Si el nombre tiene formato "Apellido, Nombre"
+    if ',' in nombre:
+        partes = nombre.split(',', 1)
+        apellido = partes[0].strip()
+        nombre_parte = partes[1].strip()
+        
+        # Obtener inicial del primer nombre
+        nombres = nombre_parte.split()
+        if nombres:
+            inicial = nombres[0][0].upper()
+            resultado = f"{inicial}. {apellido}"
         else:
-            return f"{inicial_nombre}{apellido}"
-    return nombre
+            resultado = apellido
+    else:
+        # Formato normal "Nombre Apellido"
+        partes = nombre.split()
+        if len(partes) >= 2:
+            inicial_nombre = partes[0][0].upper()
+            apellido = " ".join(partes[1:])
+            resultado = f"{inicial_nombre}. {apellido}"
+        else:
+            resultado = nombre
+    
+    # Agregar cantidad de goles si es más de 1
+    if goles > 1:
+        resultado += f" ({goles})"
+    
+    return resultado
 
 # =====================================
 # FUNCIONES DE BASE DE DATOS
@@ -1317,16 +1339,13 @@ with tab10:
                 df_display = pd.DataFrame(partidos_display)
                 
                 # Reordenar columnas
-                columnas_orden = ["Fecha", "Lugar", "Torneo", "Rival", "Resultado", "GF", "GC", "⚽"]
+                # Reordenar columnas (sin GF y GC)
+                columnas_orden = ["Fecha", "Lugar", "Torneo", "Rival", "Resultado", "⚽"]
                 if mostrar_goleadores:
                     columnas_orden.append("Goleadores")
                 
                 st.dataframe(
                     df_display[columnas_orden],
-                    column_config={
-                        "GF": st.column_config.NumberColumn("GF", format="%d"),
-                        "GC": st.column_config.NumberColumn("GC", format="%d"),
-                    },
                     use_container_width=True,
                     height=500,
                     hide_index=True
@@ -1594,4 +1613,5 @@ with tab13:
 # FOOTER
 # =====================================
 st.markdown("---")
+
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
