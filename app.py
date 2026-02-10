@@ -387,7 +387,10 @@ def obtener_rendimiento_equipo(equipo, anio=None, campeonato=None):
     if campeonato:
         query += " AND p.campeonato = ?"
         params.append(campeonato)
-    query += " ORDER BY p.fecha DESC"
+    
+    # ORDEN CORREGIDO: año, mes, día
+    query += " ORDER BY SUBSTR(p.fecha, 7, 4) DESC, SUBSTR(p.fecha, 4, 2) DESC, SUBSTR(p.fecha, 1, 2) DESC"
+    
     conn = sqlite3.connect(DB)
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
@@ -617,7 +620,8 @@ def obtener_campania_equipo(equipo, anio=None, campeonato=None):
         query += " AND p.campeonato = ?"
         params.append(campeonato)
     
-    query += " ORDER BY p.fecha DESC"
+    # ORDEN CORREGIDO: año, mes, día
+    query += " ORDER BY SUBSTR(p.fecha, 7, 4) DESC, SUBSTR(p.fecha, 4, 2) DESC, SUBSTR(p.fecha, 1, 2) DESC"
     
     conn = sqlite3.connect(DB)
     df = pd.read_sql_query(query, conn, params=params)
@@ -679,7 +683,8 @@ def obtener_historial_versus(equipo1, equipo2, anio=None, campeonato=None):
         query += " AND p.campeonato = ?"
         params.append(campeonato)
     
-    query += " ORDER BY p.fecha DESC"
+    # ORDEN CORREGIDO: año, mes, día
+    query += " ORDER BY SUBSTR(p.fecha, 7, 4) DESC, SUBSTR(p.fecha, 4, 2) DESC, SUBSTR(p.fecha, 1, 2) DESC"
     
     conn = sqlite3.connect(DB)
     df = pd.read_sql_query(query, conn, params=params)
@@ -794,7 +799,7 @@ with tab1:
             st.metric("🔴 Expulsados", int(df_display['Expulsiones'].sum()))
         with col4:
             st.metric("📊 Total", int(df_display['Total'].sum()))
-        st.dataframe(df_display, use_container_width=True, height=400)
+        st.dataframe(df_display, use_container_width=True, height=400, hide_index=True)
 
 # Tab 2: Tarjetas por Rival (AHORA POR EQUIPO)
 with tab2:
@@ -839,7 +844,8 @@ with tab2:
                         "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
                     },
                     use_container_width=True,
-                    height=350
+                    height=350,
+                    hide_index=True
                 )
 
 # Tab 3: Evolución por Equipo
@@ -879,7 +885,7 @@ with tab3:
                 ax.grid(True, alpha=0.3)
                 st.pyplot(fig)
                 
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
 # Tab 4: Árbitro vs Equipo
 with tab4:
@@ -932,7 +938,8 @@ with tab5:
                 "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
             },
             use_container_width=True,
-            height=400
+            height=400,
+            hide_index=True
         )
 
 # Tab 6: Goleadores por Equipo
@@ -967,10 +974,11 @@ with tab6:
                         "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
                     },
                     use_container_width=True,
-                    height=350
+                    height=350,
+                    hide_index=True
                 )
 
-# Tab 7: Rendimiento
+# Tab 7: Rendimiento (CON ORDEN CORREGIDO Y SIN ID)
 with tab7:
     st.markdown("## 📊 Rendimiento por Equipo")
     
@@ -1015,7 +1023,7 @@ with tab7:
                     "goles_visitante": "GV",
                     "resultado": "Resultado"
                 })
-                st.dataframe(df_display.head(20), use_container_width=True)
+                st.dataframe(df_display.head(20), use_container_width=True, hide_index=True)
 
 # Tab 8: Top Tarjetas (ELIMINADO "Más Tarjetas Totales")
 with tab8:
@@ -1070,7 +1078,8 @@ with tab9:
                         "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
                     },
                     use_container_width=True,
-                    height=400
+                    height=400,
+                    hide_index=True
                 )
     
     st.markdown("---")
@@ -1106,12 +1115,13 @@ with tab9:
                             "Puntos": st.column_config.NumberColumn("PTS", format="%d"),
                         },
                         use_container_width=True,
-                        height=500
+                        height=500,
+                        hide_index=True
                     )
             except ValueError:
                 st.error("Por favor ingresa un año válido (ej: 2024)")
 
-# Tab 10: Campañas (CON FORMATO DE GOLEADORES CORREGIDO)
+# Tab 10: Campañas (CON ORDEN CORREGIDO Y SIN ID)
 with tab10:
     st.markdown("## 🗓️ Campaña de un Equipo")
     
@@ -1208,10 +1218,11 @@ with tab10:
                         "GC": st.column_config.NumberColumn("GC", format="%d"),
                     },
                     use_container_width=True,
-                    height=500
+                    height=500,
+                    hide_index=True
                 )
 
-# Tab 11: Versus
+# Tab 11: Versus (CON ORDEN CORREGIDO Y SIN ID)
 with tab11:
     st.markdown("## ⚔️ Versus: Comparativa entre Equipos")
     
@@ -1298,11 +1309,12 @@ with tab11:
                 st.dataframe(
                     df_display,
                     use_container_width=True,
-                    height=400
+                    height=400,
+                    hide_index=True
                 )
 
 # =====================================
 # FOOTER
 # =====================================
 st.markdown("---")
-st.caption("🏆 Sistema de Seguimiento de Liga de Fútbol ⚽ | football_nueva.db")
+st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
