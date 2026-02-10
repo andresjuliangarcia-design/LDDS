@@ -893,7 +893,7 @@ def obtener_evolucion_puntos_equipo(equipo):
 # =====================================
 st.sidebar.image("logo.png", width=200)
 st.sidebar.markdown("---")
-st.sidebar.title("Liga Deportiva del Sur ⚽")
+st.sidebar.title("Liga Deportiva del Sur")
 anio = st.sidebar.text_input("Año", placeholder="Ej: 2024", key="sidebar_anio")
 campeonato = st.sidebar.selectbox(
     "Campeonato",
@@ -1617,6 +1617,7 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
 
 
