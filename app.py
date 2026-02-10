@@ -768,6 +768,105 @@ def obtener_estadisticas_versus(equipo1, equipo2, anio=None, campeonato=None):
     }
 
 # =====================================
+# NUEVAS FUNCIONES: EVOLUCIÓN DE GOLES Y PUNTOS
+# =====================================
+
+def obtener_evolucion_goles_equipo(equipo):
+    """Obtiene evolución anual de goles por equipo."""
+    query = """
+        SELECT
+            SUBSTR(p.fecha, 7, 4) AS anio,
+            SUM(CASE
+                WHEN p.equipo_local = ? THEN p.goles_local
+                WHEN p.equipo_visitante = ? THEN p.goles_visitante
+                ELSE 0 END) AS goles_favor,
+            SUM(CASE
+                WHEN p.equipo_local = ? THEN p.goles_visitante
+                WHEN p.equipo_visitante = ? THEN p.goles_local
+                ELSE 0 END) AS goles_contra
+        FROM partidos p
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        GROUP BY anio
+        ORDER BY anio
+    """
+    
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(query, conn, params=(equipo, equipo, equipo, equipo, equipo, equipo))
+    conn.close()
+    return df
+
+def obtener_evolucion_puntos_equipo(equipo):
+    """Obtiene evolución anual de puntos por equipo (respetando regla 2/3 puntos)."""
+    conn = sqlite3.connect(DB)
+    cur = conn.cursor()
+    
+    # Obtener todos los partidos del equipo con sus años
+    cur.execute("""
+        SELECT
+            SUBSTR(p.fecha, 7, 4) AS anio,
+            p.equipo_local,
+            p.goles_local,
+            p.equipo_visitante,
+            p.goles_visitante
+        FROM partidos p
+        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
+        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        ORDER BY p.fecha
+    """, (equipo, equipo))
+    
+    partidos = cur.fetchall()
+    conn.close()
+    
+    # Acumular puntos por año
+    puntos_por_anio = {}
+    
+    for partido in partidos:
+        anio, local, gl, visitante, gv = partido
+        
+        # Convertir goles a enteros
+        try:
+            gl = int(gl) if gl is not None else 0
+        except:
+            gl = 0
+        try:
+            gv = int(gv) if gv is not None else 0
+        except:
+            gv = 0
+        
+        # Determinar puntos según el año
+        puntos_victoria = 3 if int(anio) >= 1995 else 2
+        
+        # Calcular puntos obtenidos por el equipo
+        if local == equipo:
+            if gl > gv:
+                puntos = puntos_victoria
+            elif gl == gv:
+                puntos = 1
+            else:
+                puntos = 0
+        else:  # visitante == equipo
+            if gv > gl:
+                puntos = puntos_victoria
+            elif gv == gl:
+                puntos = 1
+            else:
+                puntos = 0
+        
+        # Acumular
+        if anio not in puntos_por_anio:
+            puntos_por_anio[anio] = 0
+        puntos_por_anio[anio] += puntos
+    
+    # Convertir a DataFrame
+    df = pd.DataFrame([
+        {"anio": anio, "puntos": puntos}
+        for anio, puntos in sorted(puntos_por_anio.items())
+    ])
+    
+    return df
+
+# =====================================
 # SIDEBAR: FILTROS
 # =====================================
 st.sidebar.title("FilterWhere ⚽")
@@ -791,7 +890,7 @@ st.sidebar.caption("💡 Filtros aplicados en las primeras pestañas")
 # =====================================
 # PESTAÑAS
 # =====================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
     "📊 Tarjetas x Jugador",
     "🆚 Tarjetas x Rival",
     "📈 Evolución Equipo",
@@ -802,7 +901,9 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "🔝 Top Tarjetas",
     "📋 Posiciones",
     "🗓️ Campañas",
-    "⚔️ Versus"
+    "⚔️ Versus",
+    "🥅 Evol. Goles",
+    "⭐ Evol. Puntos"
 ])
 
 # Tab 1: Tarjetas por Jugador
@@ -1125,7 +1226,7 @@ with tab9:
             st.dataframe(top_gf, use_container_width=True, hide_index=False)
         
         with col3:
-            st.markdown("### 🥅 Mejor Dif. de Gol")
+            st.markdown("### 🥅 Mejor Diferencia de Gol")
             top_dg = df_posiciones.sort_values("DG", ascending=False).head(5)[["Equipo", "DG"]].reset_index(drop=True)
             top_dg.index = top_dg.index + 1
             st.dataframe(top_dg, use_container_width=True, hide_index=False)
@@ -1323,8 +1424,174 @@ with tab11:
                 )
 
 # =====================================
+# TAB 12: EVOLUCIÓN DE GOLES
+# =====================================
+with tab12:
+    st.markdown("## 🥅 Evolución de Goles por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("### 🎯 Seleccione Equipo")
+        equipo_goles = st.selectbox("Equipo", obtener_equipos(), key="tab12_equipo")
+    
+    with col2:
+        if equipo_goles:
+            df_goles = obtener_evolucion_goles_equipo(equipo_goles)
+            
+            if df_goles.empty:
+                st.info("No hay datos para este equipo.")
+            else:
+                # Métricas
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Años", len(df_goles))
+                with col_b:
+                    st.metric("⚽ Goles a Favor", int(df_goles['goles_favor'].sum()))
+                with col_c:
+                    st.metric("🥅 Goles en Contra", int(df_goles['goles_contra'].sum()))
+                
+                st.markdown("---")
+                
+                # Gráfico de líneas
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                ax.plot(df_goles["anio"], df_goles["goles_favor"], 
+                       marker="o", linewidth=3, markersize=8,
+                       label="Goles a Favor", color="#4CAF50", alpha=0.9)
+                ax.plot(df_goles["anio"], df_goles["goles_contra"], 
+                       marker="s", linewidth=3, markersize=8,
+                       label="Goles en Contra", color="#F44336", alpha=0.9)
+                
+                # Añadir valores en los puntos
+                for i, row in df_goles.iterrows():
+                    ax.annotate(f'{int(row["goles_favor"])}', 
+                              (row["anio"], row["goles_favor"]),
+                              textcoords="offset points", xytext=(0,10), 
+                              ha='center', fontsize=9, color='#4CAF50')
+                    ax.annotate(f'{int(row["goles_contra"])}', 
+                              (row["anio"], row["goles_contra"]),
+                              textcoords="offset points", xytext=(0,10), 
+                              ha='center', fontsize=9, color='#F44336')
+                
+                ax.set_xlabel("Año", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Cantidad de Goles", fontsize=12, fontweight='bold')
+                ax.set_title(f"Evolución de goles - {equipo_goles}", 
+                           fontsize=14, fontweight='bold', pad=20)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.legend(fontsize=11, loc='upper left')
+                ax.set_xticks(df_goles["anio"])
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Tabla de datos
+                st.markdown("### 📋 Datos Detallados")
+                df_display = df_goles.rename(columns={
+                    "anio": "Año",
+                    "goles_favor": "⚽ Goles a Favor",
+                    "goles_contra": "🥅 Goles en Contra"
+                })
+                df_display["⚖️ Diferencia"] = df_display["⚽ Goles a Favor"] - df_display["🥅 Goles en Contra"]
+                
+                st.dataframe(
+                    df_display,
+                    column_config={
+                        "⚽ Goles a Favor": st.column_config.NumberColumn("⚽ GF", format="%d"),
+                        "🥅 Goles en Contra": st.column_config.NumberColumn("🥅 GC", format="%d"),
+                        "⚖️ Diferencia": st.column_config.NumberColumn("⚖️ DG", format="%d"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+# =====================================
+# TAB 13: EVOLUCIÓN DE PUNTOS
+# =====================================
+with tab13:
+    st.markdown("## ⭐ Evolución de Puntos por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("### 🎯 Seleccione Equipo")
+        equipo_puntos = st.selectbox("Equipo", obtener_equipos(), key="tab13_equipo")
+    
+    with col2:
+        if equipo_puntos:
+            df_puntos = obtener_evolucion_puntos_equipo(equipo_puntos)
+            
+            if df_puntos.empty:
+                st.info("No hay datos para este equipo.")
+            else:
+                # Métricas
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("Años", len(df_puntos))
+                with col_b:
+                    st.metric("⭐ Puntos Totales", int(df_puntos['puntos'].sum()))
+                
+                st.markdown("---")
+                
+                # Gráfico de líneas
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                ax.plot(df_puntos["anio"], df_puntos["puntos"], 
+                       marker="D", linewidth=3, markersize=8,
+                       label="Puntos", color="#FF9800", alpha=0.9)
+                
+                # Añadir valores en los puntos
+                for i, row in df_puntos.iterrows():
+                    ax.annotate(f'{int(row["puntos"])}', 
+                              (row["anio"], row["puntos"]),
+                              textcoords="offset points", xytext=(0,10), 
+                              ha='center', fontsize=9, color='#FF9800')
+                
+                ax.set_xlabel("Año", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Puntos", fontsize=12, fontweight='bold')
+                ax.set_title(f"Evolución de puntos - {equipo_puntos}", 
+                           fontsize=14, fontweight='bold', pad=20)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.legend(fontsize=11, loc='upper left')
+                ax.set_xticks(df_puntos["anio"])
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Tabla de datos
+                st.markdown("### 📋 Datos Detallados")
+                df_display = df_puntos.rename(columns={
+                    "anio": "Año",
+                    "puntos": "⭐ Puntos"
+                })
+                
+                st.dataframe(
+                    df_display,
+                    column_config={
+                        "⭐ Puntos": st.column_config.NumberColumn("⭐ Puntos", format="%d"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Nota sobre sistema de puntos
+                st.markdown("---")
+                primer_anio = int(df_puntos["anio"].min())
+                ultimo_anio = int(df_puntos["anio"].max())
+                
+                if primer_anio < 1995 and ultimo_anio >= 1995:
+                    st.info(f"""
+                    📝 **Sistema de puntos aplicado:**
+                    - **{primer_anio} - 1994**: 2 puntos por victoria
+                    - **1995 - {ultimo_anio}**: 3 puntos por victoria
+                    """)
+                elif primer_anio < 1995:
+                    st.info(f"📝 **Sistema de puntos**: 2 puntos por victoria ({primer_anio} - {ultimo_anio})")
+                else:
+                    st.info(f"📝 **Sistema de puntos**: 3 puntos por victoria ({primer_anio} - {ultimo_anio})")
+
+# =====================================
 # FOOTER
 # =====================================
 st.markdown("---")
-
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
