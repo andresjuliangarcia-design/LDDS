@@ -1340,7 +1340,7 @@ with tab10:
                 
                 # Reordenar columnas
                 # Reordenar columnas (sin GF y GC)
-                columnas_orden = ["Fecha", "Lugar", "Torneo", "Rival", "Resultado", "⚽"]
+                columnas_orden = ["Fecha", "Lugar", "Torneo", "Rival", "Resultado"]
                 if mostrar_goleadores:
                     columnas_orden.append("Goleadores")
                 
@@ -1615,3 +1615,4 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
