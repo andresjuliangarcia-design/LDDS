@@ -744,8 +744,7 @@ def obtener_estadisticas_versus(equipo1, equipo2, anio=None, campeonato=None):
             SUM(CASE WHEN p.equipo_local = ? THEN p.goles_local ELSE p.goles_visitante END) AS goles_eq1,
             SUM(CASE WHEN p.equipo_local = ? THEN p.goles_visitante ELSE p.goles_local END) AS goles_eq2
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (
+        WHERE (
             (p.equipo_local = ? AND p.equipo_visitante = ?)
             OR
             (p.equipo_local = ? AND p.equipo_visitante = ?)
