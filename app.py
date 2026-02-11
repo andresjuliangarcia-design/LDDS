@@ -528,7 +528,7 @@ def obtener_tabla_historica_acumulada():
     Obtiene tabla histórica de TODOS los partidos (sin filtro de año).
     Replica exactamente el comportamiento de tabla_historica.py (Tkinter).
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB)
     
     # Obtener todos los partidos
     query = """
@@ -1620,6 +1620,7 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
 
 
