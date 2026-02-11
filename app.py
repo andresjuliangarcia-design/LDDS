@@ -524,56 +524,62 @@ def calcular_puntos(goles_local, goles_visitante, equipo_local, equipo_visitante
         return (1, 0, 1, 0)
 
 def obtener_tabla_historica_acumulada():
-    """Obtiene tabla de posiciones acumulada de TODOS los partidos históricos."""
-    conn = sqlite3.connect(DB)
-    cur = conn.cursor()
+    """
+    Obtiene tabla histórica de TODOS los partidos (sin filtro de año).
+    Replica exactamente el comportamiento de tabla_historica.py (Tkinter).
+    """
+    conn = sqlite3.connect(DB_PATH)
     
-    # Obtener todos los partidos con sus fechas
-    cur.execute("""
-        SELECT
-            p.fecha,
-            p.equipo_local,
-            p.goles_local,
-            p.equipo_visitante,
-            p.goles_visitante
-        FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND p.equipo_local IS NOT NULL AND p.equipo_visitante IS NOT NULL
-        ORDER BY p.fecha
-    """)
+    # Obtener todos los partidos
+    query = """
+        SELECT 
+            id,
+            fecha,
+            equipo_local,
+            goles_local,
+            equipo_visitante,
+            goles_visitante,
+            campeonato,
+            instancia,
+            lugar
+        FROM partidos
+    """
     
-    partidos = cur.fetchall()
+    partidos = pd.read_sql_query(query, conn)
     conn.close()
     
-    # Diccionario para acumular estadísticas por equipo
+    if partidos.empty:
+        return pd.DataFrame(), 0
+    
     tabla = {}
     
-    for partido in partidos:
-        fecha, local, gl, visitante, gv = partido
+    for _, row in partidos.iterrows():
+        local = row['equipo_local']
+        visitante = row['equipo_visitante']
+        gl = row['goles_local']
+        gv = row['goles_visitante']
         
-        # Convertir goles a enteros (manejar NULL)
+        # Saltar partidos con equipos vacíos (igual que Tkinter)
+        if not local or not visitante or pd.isna(local) or pd.isna(visitante):
+            continue
+        
+        # Convertir goles a enteros, default 0 (igual que Tkinter)
         try:
-            gl = int(gl) if gl is not None else 0
+            gl = int(gl) if not pd.isna(gl) else 0
         except:
             gl = 0
         try:
-            gv = int(gv) if gv is not None else 0
+            gv = int(gv) if not pd.isna(gv) else 0
         except:
             gv = 0
         
-        # Obtener año para determinar sistema de puntos
-        try:
-            anio = int(fecha.split('/')[2]) if fecha else 0
-        except:
-            anio = 0
-        
         # Inicializar equipos si no existen
         if local not in tabla:
-            tabla[local] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "Puntos": 0}
+            tabla[local] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0}
         if visitante not in tabla:
-            tabla[visitante] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0, "Puntos": 0}
+            tabla[visitante] = {"PJ": 0, "PG": 0, "PE": 0, "PP": 0, "GF": 0, "GC": 0}
         
-        # Acumular partidos jugados y goles
+        # Acumular estadísticas
         tabla[local]["PJ"] += 1
         tabla[visitante]["PJ"] += 1
         tabla[local]["GF"] += gl
@@ -581,45 +587,42 @@ def obtener_tabla_historica_acumulada():
         tabla[visitante]["GF"] += gv
         tabla[visitante]["GC"] += gl
         
-        # Determinar puntos según el año
-        puntos_victoria = 3 if anio >= 1995 else 2
-        
-        # Asignar resultados y puntos
         if gl > gv:
             tabla[local]["PG"] += 1
             tabla[visitante]["PP"] += 1
-            tabla[local]["Puntos"] += puntos_victoria
         elif gl < gv:
             tabla[visitante]["PG"] += 1
             tabla[local]["PP"] += 1
-            tabla[visitante]["Puntos"] += puntos_victoria
         else:
             tabla[local]["PE"] += 1
             tabla[visitante]["PE"] += 1
-            tabla[local]["Puntos"] += 1
-            tabla[visitante]["Puntos"] += 1
     
-    # Convertir a lista ordenada
+    # Crear lista de resultados
     posiciones = []
-    for equipo, datos in tabla.items():
-        dg = datos["GF"] - datos["GC"]
-        posiciones.append((
-            equipo,
-            datos["PJ"],
-            datos["PG"],
-            datos["PE"],
-            datos["PP"],
-            datos["GF"],
-            datos["GC"],
-            dg,
-            datos["Puntos"]
-        ))
+    for equipo, d in tabla.items():
+        pts = d["PG"] * 3 + d["PE"]  # Sistema de 3 puntos (histórico)
+        dg = d["GF"] - d["GC"]
+        posiciones.append({
+            'Equipo': equipo,
+            'PJ': d["PJ"],
+            'PG': d["PG"],
+            'PE': d["PE"],
+            'PP': d["PP"],
+            'GF': d["GF"],
+            'GC': d["GC"],
+            'DG': dg,
+            'Puntos': pts
+        })
     
-    # Ordenar por: Puntos, DG, GF (descendente)
-    posiciones.sort(key=lambda x: (x[8], x[7], x[5]), reverse=True)
+    # Crear DataFrame y ordenar
+    df = pd.DataFrame(posiciones)
+    if not df.empty:
+        df = df.sort_values(['Puntos', 'DG', 'GF'], ascending=[False, False, False])
+        df = df.reset_index(drop=True)
+        df.index = df.index + 1  # Empezar desde 1
+        df = df[['Equipo', 'PJ', 'PG', 'PE', 'PP', 'GF', 'GC', 'DG', 'Puntos']]
     
-    return posiciones, len(partidos)
-
+    return df, len(partidos)
 
 # =====================================
 # NUEVAS FUNCIONES: CAMPAÑAS Y VERSUS
@@ -1617,6 +1620,7 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
 
 
