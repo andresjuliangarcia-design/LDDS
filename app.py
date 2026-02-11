@@ -905,287 +905,24 @@ st.sidebar.caption("💡 Filtros aplicados en las primeras pestañas")
 # PESTAÑAS
 # =====================================
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
-    "📊 Tarjetas x Jugador",
-    "🆚 Tarjetas x Rival",
-    "📈 Evolución Equipo",
-    "⚖️ Árbitro vs Equipo",
-    "⚽ Goles x Jugador",
-    "🏆 Goleadores Equipo",
-    "📊 Rendimiento",
-    "🔝 Top Tarjetas",
     "📋 Posiciones",
     "🗓️ Campañas",
     "⚔️ Versus",
+    "⭐ Evol. Puntos",
+    "📊 Rendimiento",
+    "⚽ Goles x Jugador",
+    "🏆 Goleadores Equipo",
     "🥅 Evol. Goles",
-    "⭐ Evol. Puntos"
+    "📊 Tarjetas x Jugador",
+    "🆚 Tarjetas x Rival",
+    "📈 Evolución Equipo",
+    "🔝 Top Tarjetas",
+    "⚖️ Árbitro vs Equipo"    
+    
 ])
 
-# Tab 1: Tarjetas por Jugador
+# Tab 1: Tabla de Posiciones (HISTORIAL COMPLETO PRIMERO)
 with tab1:
-    st.markdown("## 📊 Tarjetas por Jugador")
-    df = obtener_tarjetas_por_jugador(anio, campeonato, equipo_filtro, solo_expulsados)
-    if df.empty:
-        st.warning("⚠️ No se encontraron datos.")
-    else:
-        df["Total"] = df["amon"] + df["exp"]
-        df_display = df.rename(columns={"jugador": "Jugador", "equipo_jugador": "Equipo", "amon": "Amonestaciones", "exp": "Expulsiones", "Total": "Total"})
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Jugadores", len(df_display))
-        with col2:
-            st.metric("⚠️ Amonestados", int(df_display['Amonestaciones'].sum()))
-        with col3:
-            st.metric("🔴 Expulsados", int(df_display['Expulsiones'].sum()))
-        with col4:
-            st.metric("📊 Total", int(df_display['Total'].sum()))
-        st.dataframe(df_display, use_container_width=True, height=400, hide_index=True)
-
-# Tab 2: Tarjetas por Rival (AHORA POR EQUIPO)
-with tab2:
-    st.markdown("## 🆚 Tarjetas por Rival (por Equipo)")
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab2_equipo")
-    
-    with col2:
-        if equipo:
-            df_rivales = obtener_tarjetas_por_rival_equipo(equipo)
-            
-            if df_rivales.empty:
-                st.warning("No hay datos para este equipo.")
-            else:
-                st.markdown(f"### 📊 Tarjetas recibidas por {equipo} contra cada rival")
-                
-                col_a, col_b, col_c, col_d = st.columns(4)
-                with col_a:
-                    st.metric("Rivales", len(df_rivales))
-                with col_b:
-                    st.metric("⚠️ Amonestaciones", int(df_rivales['amon'].sum()))
-                with col_c:
-                    st.metric("🔴 Expulsiones", int(df_rivales['exp'].sum()))
-                with col_d:
-                    st.metric("📊 Total", int((df_rivales['amon'] + df_rivales['exp']).sum()))
-                
-                df_display = df_rivales.rename(columns={
-                    "rival": "Rival",
-                    "amon": "Amonestaciones",
-                    "exp": "Expulsiones"
-                })
-                df_display["Total"] = df_display["Amonestaciones"] + df_display["Expulsiones"]
-                
-                st.dataframe(
-                    df_display[["Rival", "Amonestaciones", "Expulsiones", "Total"]],
-                    column_config={
-                        "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", format="%d"),
-                        "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", format="%d"),
-                        "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
-                    },
-                    use_container_width=True,
-                    height=350,
-                    hide_index=True
-                )
-
-# Tab 3: Evolución por Equipo
-with tab3:
-    st.markdown("## 📈 Evolución Anual de Tarjetas por Equipo")
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab3_equipo")
-    
-    with col2:
-        if equipo:
-            df = obtener_evolucion_equipo(equipo)
-            
-            if df.empty:
-                st.info("No hay datos para este equipo.")
-            else:
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric("Años", len(df))
-                with col_b:
-                    st.metric("⚠️ Amonestaciones", int(df['amon'].sum()))
-                with col_c:
-                    st.metric("🔴 Expulsiones", int(df['exp'].sum()))
-                
-                st.markdown("---")
-                
-                # Gráfico
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.plot(df["anio"], df["amon"], marker="o", label="Amonestaciones", color="#FFC107")
-                ax.plot(df["anio"], df["exp"], marker="s", label="Expulsones", color="#F44336")
-                ax.set_title(f"Evolución - {equipo}") 
-                ax.set_xlabel("Año")                
-                ax.set_ylabel("Cantidad")                
-                ax.legend()                
-                ax.grid(True, alpha=0.3)                
-                st.pyplot(fig)
-                
-                st.dataframe(df, use_container_width=True, hide_index=True)
-
-# Tab 4: Árbitro vs Equipo
-with tab4:
-    st.markdown("## ⚖️ Árbitro vs Equipo")
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        arbitro = st.selectbox("Árbitro", obtener_valores_unicos("arbitro"), key="tab4_arbitro")
-        equipo = st.selectbox("Equipo", obtener_equipos(), key="tab4_equipo")
-        anio_filtro = st.text_input("Año (opcional)", key="tab4_anio")
-        camp_filtro = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab4_campeonato")
-    
-    with col2:
-        if arbitro and equipo:
-            stats = obtener_estadisticas_arbitro_equipo(arbitro, equipo, anio_filtro or None, camp_filtro or None)
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("⚽ Partidos", stats["partidos"])
-            with col_b:
-                st.metric("⚠️ Amonestados", stats["amonestados"])
-            with col_c:
-                st.metric("🔴 Expulsados", stats["expulsados"])
-            st.markdown(f"""
-            **Resumen:**
-            - El árbitro **{arbitro}** dirigió **{stats['partidos']}** partidos a **{equipo}**
-            - Mostró **{stats['amonestados']}** tarjetas amarillas y **{stats['expulsados']}** rojas
-            """)
-
-# Tab 5: Goles por Jugador (CORREGIDO)
-with tab5:
-    st.markdown("## ⚽ Goles por Jugador")
-    
-    df = obtener_goles_por_jugador(anio, campeonato, equipo_filtro)
-    
-    if df.empty:
-        st.warning("⚠️ No se encontraron datos.")
-    else:
-        df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Jugadores", len(df_display))
-        with col2:
-            st.metric("⚽ Total Goles", int(df_display['Goles'].sum()))
-        
-        st.dataframe(
-            df_display,
-            column_config={
-                "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
-            },
-            use_container_width=True,
-            height=400,
-            hide_index=True
-        )
-
-# Tab 6: Goleadores por Equipo
-with tab6:
-    st.markdown("## 🏆 Goleadores por Equipo")
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab6_equipo")
-    
-    with col2:
-        if equipo:
-            df = obtener_goleadores_por_equipo(equipo)
-            
-            if df.empty:
-                st.info("No hay datos para este equipo.")
-            else:
-                st.markdown(f"### 🥅 Goleadores de {equipo}")
-                
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.metric("Jugadores", len(df))
-                with col_b:
-                    st.metric("⚽ Total Goles", int(df['goles'].sum()))
-                
-                df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
-                
-                st.dataframe(
-                    df_display,
-                    column_config={
-                        "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
-                    },
-                    use_container_width=True,
-                    height=350,
-                    hide_index=True
-                )
-
-# Tab 7: Rendimiento (CON ORDEN CORREGIDO Y SIN ID)
-with tab7:
-    st.markdown("## 📊 Rendimiento por Equipo")
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab7_equipo")
-        anio_rend = st.text_input("Año (opcional)", key="tab7_anio")
-        camp_rend = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab7_campeonato")
-    
-    with col2:
-        if equipo:
-            stats = obtener_estadisticas_rendimiento(equipo, anio_rend or None, camp_rend or None)
-            col_a, col_b, col_c, col_d = st.columns(4)
-            with col_a:
-                st.metric("⚽ PJ", stats["partidos_jugados"])
-            with col_b:
-                st.metric("✅ PG", stats["ganados"])
-            with col_c:
-                st.metric("🤝 PE", stats["empatados"])
-            with col_d:
-                st.metric("❌ PP", stats["perdidos"])
-            col_e, col_f, col_g = st.columns(3)
-            with col_e:
-                st.metric("⚽ GF", stats["goles_favor"])
-            with col_f:
-                st.metric("🥅 GC", stats["goles_contra"])
-            with col_g:
-                st.metric("⚖️ DG", stats["diferencia"])
-            
-            st.markdown("---")
-            st.markdown("### 📋 Partidos recientes")
-            df_partidos = obtener_rendimiento_equipo(equipo, anio_rend or None, camp_rend or None)
-            
-            if not df_partidos.empty:
-                df_display = df_partidos.rename(columns={
-                    "fecha": "Fecha",
-                    "campeonato": "Campeonato",
-                    "equipo_local": "Local",
-                    "equipo_visitante": "Visitante",
-                    "goles_local": "GL",
-                    "goles_visitante": "GV",
-                    "resultado": "Resultado"
-                })
-                st.dataframe(df_display.head(20), use_container_width=True, hide_index=True)
-
-# Tab 8: Top Tarjetas (ELIMINADO "Más Tarjetas Totales")
-with tab8:
-    st.markdown("## 🔝 Jugadores con más Tarjetas")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### ⚠️ Más Amonestados")
-        df_amon = obtener_jugadores_mas_amonestados(10)
-        if not df_amon.empty:
-            df_amon = df_amon.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "amonestaciones": "Amonestaciones"})
-            st.dataframe(df_amon, use_container_width=True, hide_index=True)
-    
-    with col2:
-        st.markdown("### 🔴 Más Expulsados")
-        df_exp = obtener_jugadores_mas_expulsados(10)
-        if not df_exp.empty:
-            df_exp = df_exp.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "expulsiones": "Expulsiones"})
-            st.dataframe(df_exp, use_container_width=True, hide_index=True)
-
-# Tab 9: Tabla de Posiciones (HISTORIAL COMPLETO PRIMERO)
-with tab9:
     st.markdown("## 📋 Tabla Histórica - Todos los Partidos")
     
     # Obtener datos acumulados
@@ -1245,8 +982,8 @@ with tab9:
             top_dg.index = top_dg.index + 1
             st.dataframe(top_dg, use_container_width=True, hide_index=False)
 
-# Tab 10: Campañas (CON ORDEN CORREGIDO Y SIN ID)
-with tab10:
+# Tab 2: Campañas (CON ORDEN CORREGIDO Y SIN ID)
+with tab2:
     st.markdown("## 🗓️ Campaña de un Equipo")
     
     col1, col2 = st.columns([1, 3])
@@ -1343,8 +1080,8 @@ with tab10:
                     hide_index=True
                 )
 
-# Tab 11: Versus (CON ORDEN CORREGIDO Y SIN ID)
-with tab11:
+# Tab 3: Versus (CON ORDEN CORREGIDO Y SIN ID)
+with tab3:
     st.markdown("## ⚔️ Versus: Comparativa entre Equipos")
     
     col1, col2 = st.columns([1, 2])
@@ -1433,93 +1170,8 @@ with tab11:
                     height=400,
                     hide_index=True
                 )
-
-# =====================================
-# TAB 12: EVOLUCIÓN DE GOLES
-# =====================================
-with tab12:
-    st.markdown("## 🥅 Evolución de Goles por Equipo")
-    
-    col1, col2 = st.columns([1, 3])
-    
-    with col1:
-        st.markdown("### 🎯 Seleccione Equipo")
-        equipo_goles = st.selectbox("Equipo", obtener_equipos(), key="tab12_equipo")
-    
-    with col2:
-        if equipo_goles:
-            df_goles = obtener_evolucion_goles_equipo(equipo_goles)
-            
-            if df_goles.empty:
-                st.info("No hay datos para este equipo.")
-            else:
-                # Métricas
-                col_a, col_b, col_c = st.columns(3)
-                with col_a:
-                    st.metric("Años", len(df_goles))
-                with col_b:
-                    st.metric("⚽ Goles a Favor", int(df_goles['goles_favor'].sum()))
-                with col_c:
-                    st.metric("🥅 Goles en Contra", int(df_goles['goles_contra'].sum()))
-                
-                st.markdown("---")
-                
-                # Gráfico de líneas
-                fig, ax = plt.subplots(figsize=(12, 6))
-                
-                ax.plot(df_goles["anio"], df_goles["goles_favor"], 
-                       marker="o", linewidth=3, markersize=8,
-                       label="Goles a Favor", color="#4CAF50", alpha=0.9)
-                ax.plot(df_goles["anio"], df_goles["goles_contra"], 
-                       marker="s", linewidth=3, markersize=8,
-                       label="Goles en Contra", color="#F44336", alpha=0.9)
-                
-                # Añadir valores en los puntos
-                for i, row in df_goles.iterrows():
-                    ax.annotate(f'{int(row["goles_favor"])}', 
-                              (row["anio"], row["goles_favor"]),
-                              textcoords="offset points", xytext=(0,10), 
-                              ha='center', fontsize=9, color='#4CAF50')
-                    ax.annotate(f'{int(row["goles_contra"])}', 
-                              (row["anio"], row["goles_contra"]),
-                              textcoords="offset points", xytext=(0,10), 
-                              ha='center', fontsize=9, color='#F44336')
-                
-                ax.set_xlabel("Año", fontsize=12, fontweight='bold')
-                ax.set_ylabel("Cantidad de Goles", fontsize=12, fontweight='bold')
-                ax.set_title(f"Evolución de goles - {equipo_goles}", 
-                           fontsize=14, fontweight='bold', pad=20)
-                ax.grid(True, alpha=0.3, linestyle='--')
-                ax.legend(fontsize=11, loc='upper left')
-                ax.set_xticks(df_goles["anio"])
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-                # Tabla de datos
-                st.markdown("### 📋 Datos Detallados")
-                df_display = df_goles.rename(columns={
-                    "anio": "Año",
-                    "goles_favor": "⚽ Goles a Favor",
-                    "goles_contra": "🥅 Goles en Contra"
-                })
-                df_display["⚖️ Diferencia"] = df_display["⚽ Goles a Favor"] - df_display["🥅 Goles en Contra"]
-                
-                st.dataframe(
-                    df_display,
-                    column_config={
-                        "⚽ Goles a Favor": st.column_config.NumberColumn("⚽ GF", format="%d"),
-                        "🥅 Goles en Contra": st.column_config.NumberColumn("🥅 GC", format="%d"),
-                        "⚖️ Diferencia": st.column_config.NumberColumn("⚖️ DG", format="%d"),
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-# =====================================
-# TAB 13: EVOLUCIÓN DE PUNTOS
-# =====================================
-with tab13:
+# Tab4: Evolucion de puntos 
+with tab4:
     st.markdown("## ⭐ Evolución de Puntos por Equipo")
     
     col1, col2 = st.columns([1, 3])
@@ -1600,6 +1252,352 @@ with tab13:
                     st.info(f"📝 **Sistema de puntos**: 2 puntos por victoria ({primer_anio} - {ultimo_anio})")
                 else:
                     st.info(f"📝 **Sistema de puntos**: 3 puntos por victoria ({primer_anio} - {ultimo_anio})")
+
+# Tab 5: Rendimiento
+with tab5:
+    st.markdown("## 📊 Rendimiento por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab7_equipo")
+        anio_rend = st.text_input("Año (opcional)", key="tab7_anio")
+        camp_rend = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab7_campeonato")
+    
+    with col2:
+        if equipo:
+            stats = obtener_estadisticas_rendimiento(equipo, anio_rend or None, camp_rend or None)
+            col_a, col_b, col_c, col_d = st.columns(4)
+            with col_a:
+                st.metric("⚽ PJ", stats["partidos_jugados"])
+            with col_b:
+                st.metric("✅ PG", stats["ganados"])
+            with col_c:
+                st.metric("🤝 PE", stats["empatados"])
+            with col_d:
+                st.metric("❌ PP", stats["perdidos"])
+            col_e, col_f, col_g = st.columns(3)
+            with col_e:
+                st.metric("⚽ GF", stats["goles_favor"])
+            with col_f:
+                st.metric("🥅 GC", stats["goles_contra"])
+            with col_g:
+                st.metric("⚖️ DG", stats["diferencia"])
+            
+            st.markdown("---")
+            st.markdown("### 📋 Partidos recientes")
+            df_partidos = obtener_rendimiento_equipo(equipo, anio_rend or None, camp_rend or None)
+            
+            if not df_partidos.empty:
+                df_display = df_partidos.rename(columns={
+                    "fecha": "Fecha",
+                    "campeonato": "Campeonato",
+                    "equipo_local": "Local",
+                    "equipo_visitante": "Visitante",
+                    "goles_local": "GL",
+                    "goles_visitante": "GV",
+                    "resultado": "Resultado"
+                })
+                st.dataframe(df_display.head(20), use_container_width=True, hide_index=True)
+
+# Tab 6: Goles por Jugador (CORREGIDO)
+with tab6:
+    st.markdown("## ⚽ Goles por Jugador")
+    
+    df = obtener_goles_por_jugador(anio, campeonato, equipo_filtro)
+    
+    if df.empty:
+        st.warning("⚠️ No se encontraron datos.")
+    else:
+        df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Jugadores", len(df_display))
+        with col2:
+            st.metric("⚽ Total Goles", int(df_display['Goles'].sum()))
+        
+        st.dataframe(
+            df_display,
+            column_config={
+                "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
+            },
+            use_container_width=True,
+            height=400,
+            hide_index=True
+        )
+
+# Tab 7: Goleadores por Equipo
+with tab7:
+    st.markdown("## 🏆 Goleadores por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab6_equipo")
+    
+    with col2:
+        if equipo:
+            df = obtener_goleadores_por_equipo(equipo)
+            
+            if df.empty:
+                st.info("No hay datos para este equipo.")
+            else:
+                st.markdown(f"### 🥅 Goleadores de {equipo}")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric("Jugadores", len(df))
+                with col_b:
+                    st.metric("⚽ Total Goles", int(df['goles'].sum()))
+                
+                df_display = df.rename(columns={"jugador": "Jugador", "goles": "Goles"})
+                
+                st.dataframe(
+                    df_display,
+                    column_config={
+                        "Goles": st.column_config.NumberColumn("⚽ Goles", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=350,
+                    hide_index=True
+                )
+
+# TAB 8: EVOLUCIÓN DE GOLES
+with tab8:
+    st.markdown("## 🥅 Evolución de Goles por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        st.markdown("### 🎯 Seleccione Equipo")
+        equipo_goles = st.selectbox("Equipo", obtener_equipos(), key="tab12_equipo")
+    
+    with col2:
+        if equipo_goles:
+            df_goles = obtener_evolucion_goles_equipo(equipo_goles)
+            
+            if df_goles.empty:
+                st.info("No hay datos para este equipo.")
+            else:
+                # Métricas
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Años", len(df_goles))
+                with col_b:
+                    st.metric("⚽ Goles a Favor", int(df_goles['goles_favor'].sum()))
+                with col_c:
+                    st.metric("🥅 Goles en Contra", int(df_goles['goles_contra'].sum()))
+                
+                st.markdown("---")
+                
+                # Gráfico de líneas
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                ax.plot(df_goles["anio"], df_goles["goles_favor"], 
+                       marker="o", linewidth=3, markersize=8,
+                       label="Goles a Favor", color="#4CAF50", alpha=0.9)
+                ax.plot(df_goles["anio"], df_goles["goles_contra"], 
+                       marker="s", linewidth=3, markersize=8,
+                       label="Goles en Contra", color="#F44336", alpha=0.9)
+                
+                # Añadir valores en los puntos
+                for i, row in df_goles.iterrows():
+                    ax.annotate(f'{int(row["goles_favor"])}', 
+                              (row["anio"], row["goles_favor"]),
+                              textcoords="offset points", xytext=(0,10), 
+                              ha='center', fontsize=9, color='#4CAF50')
+                    ax.annotate(f'{int(row["goles_contra"])}', 
+                              (row["anio"], row["goles_contra"]),
+                              textcoords="offset points", xytext=(0,10), 
+                              ha='center', fontsize=9, color='#F44336')
+                
+                ax.set_xlabel("Año", fontsize=12, fontweight='bold')
+                ax.set_ylabel("Cantidad de Goles", fontsize=12, fontweight='bold')
+                ax.set_title(f"Evolución de goles - {equipo_goles}", 
+                           fontsize=14, fontweight='bold', pad=20)
+                ax.grid(True, alpha=0.3, linestyle='--')
+                ax.legend(fontsize=11, loc='upper left')
+                ax.set_xticks(df_goles["anio"])
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Tabla de datos
+                st.markdown("### 📋 Datos Detallados")
+                df_display = df_goles.rename(columns={
+                    "anio": "Año",
+                    "goles_favor": "⚽ Goles a Favor",
+                    "goles_contra": "🥅 Goles en Contra"
+                })
+                df_display["⚖️ Diferencia"] = df_display["⚽ Goles a Favor"] - df_display["🥅 Goles en Contra"]
+                
+                st.dataframe(
+                    df_display,
+                    column_config={
+                        "⚽ Goles a Favor": st.column_config.NumberColumn("⚽ GF", format="%d"),
+                        "🥅 Goles en Contra": st.column_config.NumberColumn("🥅 GC", format="%d"),
+                        "⚖️ Diferencia": st.column_config.NumberColumn("⚖️ DG", format="%d"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+# Tab 9: Tarjetas por Jugador
+with tab9:
+    st.markdown("## 📊 Tarjetas por Jugador")
+    df = obtener_tarjetas_por_jugador(anio, campeonato, equipo_filtro, solo_expulsados)
+    if df.empty:
+        st.warning("⚠️ No se encontraron datos.")
+    else:
+        df["Total"] = df["amon"] + df["exp"]
+        df_display = df.rename(columns={"jugador": "Jugador", "equipo_jugador": "Equipo", "amon": "Amonestaciones", "exp": "Expulsiones", "Total": "Total"})
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Jugadores", len(df_display))
+        with col2:
+            st.metric("⚠️ Amonestados", int(df_display['Amonestaciones'].sum()))
+        with col3:
+            st.metric("🔴 Expulsados", int(df_display['Expulsiones'].sum()))
+        with col4:
+            st.metric("📊 Total", int(df_display['Total'].sum()))
+        st.dataframe(df_display, use_container_width=True, height=400, hide_index=True)
+
+# Tab 10: Tarjetas por Rival (AHORA POR EQUIPO)
+with tab10:
+    st.markdown("## 🆚 Tarjetas por Rival (por Equipo)")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab2_equipo")
+    
+    with col2:
+        if equipo:
+            df_rivales = obtener_tarjetas_por_rival_equipo(equipo)
+            
+            if df_rivales.empty:
+                st.warning("No hay datos para este equipo.")
+            else:
+                st.markdown(f"### 📊 Tarjetas recibidas por {equipo} contra cada rival")
+                
+                col_a, col_b, col_c, col_d = st.columns(4)
+                with col_a:
+                    st.metric("Rivales", len(df_rivales))
+                with col_b:
+                    st.metric("⚠️ Amonestaciones", int(df_rivales['amon'].sum()))
+                with col_c:
+                    st.metric("🔴 Expulsiones", int(df_rivales['exp'].sum()))
+                with col_d:
+                    st.metric("📊 Total", int((df_rivales['amon'] + df_rivales['exp']).sum()))
+                
+                df_display = df_rivales.rename(columns={
+                    "rival": "Rival",
+                    "amon": "Amonestaciones",
+                    "exp": "Expulsiones"
+                })
+                df_display["Total"] = df_display["Amonestaciones"] + df_display["Expulsiones"]
+                
+                st.dataframe(
+                    df_display[["Rival", "Amonestaciones", "Expulsiones", "Total"]],
+                    column_config={
+                        "Amonestaciones": st.column_config.NumberColumn("⚠️ Amonestaciones", format="%d"),
+                        "Expulsiones": st.column_config.NumberColumn("🔴 Expulsiones", format="%d"),
+                        "Total": st.column_config.NumberColumn("📊 Total", format="%d"),
+                    },
+                    use_container_width=True,
+                    height=350,
+                    hide_index=True
+                )
+
+# Tab 11: Evolución por Equipo
+with tab11:
+    st.markdown("## 📈 Evolución Anual de Tarjetas por Equipo")
+    
+    col1, col2 = st.columns([1, 3])
+    
+    with col1:
+        equipo = st.selectbox("Selecciona equipo", obtener_equipos(), key="tab3_equipo")
+    
+    with col2:
+        if equipo:
+            df = obtener_evolucion_equipo(equipo)
+            
+            if df.empty:
+                st.info("No hay datos para este equipo.")
+            else:
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Años", len(df))
+                with col_b:
+                    st.metric("⚠️ Amonestaciones", int(df['amon'].sum()))
+                with col_c:
+                    st.metric("🔴 Expulsiones", int(df['exp'].sum()))
+                
+                st.markdown("---")
+                
+                # Gráfico
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.plot(df["anio"], df["amon"], marker="o", label="Amonestaciones", color="#FFC107")
+                ax.plot(df["anio"], df["exp"], marker="s", label="Expulsones", color="#F44336")
+                ax.set_title(f"Evolución - {equipo}") 
+                ax.set_xlabel("Año")                
+                ax.set_ylabel("Cantidad")                
+                ax.legend()                
+                ax.grid(True, alpha=0.3)                
+                st.pyplot(fig)
+                
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+
+# Tab 12: Top Tarjetas (ELIMINADO "Más Tarjetas Totales")
+with tab12:
+    st.markdown("## 🔝 Jugadores con más Tarjetas")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### ⚠️ Más Amonestados")
+        df_amon = obtener_jugadores_mas_amonestados(10)
+        if not df_amon.empty:
+            df_amon = df_amon.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "amonestaciones": "Amonestaciones"})
+            st.dataframe(df_amon, use_container_width=True, hide_index=True)
+    
+    with col2:
+        st.markdown("### 🔴 Más Expulsados")
+        df_exp = obtener_jugadores_mas_expulsados(10)
+        if not df_exp.empty:
+            df_exp = df_exp.rename(columns={"jugador": "Jugador", "equipo": "Equipo", "expulsiones": "Expulsiones"})
+            st.dataframe(df_exp, use_container_width=True, hide_index=True)
+
+# Tab 13: Árbitro vs Equipo
+with tab13:
+    st.markdown("## ⚖️ Árbitro vs Equipo")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        arbitro = st.selectbox("Árbitro", obtener_valores_unicos("arbitro"), key="tab4_arbitro")
+        equipo = st.selectbox("Equipo", obtener_equipos(), key="tab4_equipo")
+        anio_filtro = st.text_input("Año (opcional)", key="tab4_anio")
+        camp_filtro = st.selectbox("Campeonato (opcional)", [""] + obtener_valores_unicos("campeonato"), key="tab4_campeonato")
+    
+    with col2:
+        if arbitro and equipo:
+            stats = obtener_estadisticas_arbitro_equipo(arbitro, equipo, anio_filtro or None, camp_filtro or None)
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("⚽ Partidos", stats["partidos"])
+            with col_b:
+                st.metric("⚠️ Amonestados", stats["amonestados"])
+            with col_c:
+                st.metric("🔴 Expulsados", stats["expulsados"])
+            st.markdown(f"""
+            **Resumen:**
+            - El árbitro **{arbitro}** dirigió **{stats['partidos']}** partidos a **{equipo}**
+            - Mostró **{stats['amonestados']}** tarjetas amarillas y **{stats['expulsados']}** rojas
+            """)
 
 # =====================================
 # FOOTER
