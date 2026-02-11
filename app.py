@@ -433,8 +433,7 @@ def obtener_estadisticas_rendimiento(equipo, anio=None, campeonato=None):
                 WHEN p.equipo_visitante = ? THEN p.goles_local
                 ELSE 0 END) AS goles_contra
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        WHERE (p.equipo_local = ? OR p.equipo_visitante = ?)
     """
     params = [equipo, equipo, equipo, equipo, equipo, equipo, equipo, equipo, equipo, equipo]
     if anio:
