@@ -524,11 +524,12 @@ def calcular_puntos(goles_local, goles_visitante, equipo_local, equipo_visitante
         return (1, 0, 1, 0)
 
 def obtener_tabla_historica_acumulada():
-    """Obtiene tabla de posiciones acumulada de TODOS los partidos históricos."""
+    """Obtiene tabla de posiciones acumulada de TODOS los partidos históricos.
+    Respeta regla histórica: 2 puntos (hasta 1994), 3 puntos (desde 1995)."""
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
     
-    # Obtener todos los partidos con sus fechas
+    # Obtener TODOS los partidos (sin filtrar por árbitro)
     cur.execute("""
         SELECT
             p.fecha,
@@ -537,8 +538,8 @@ def obtener_tabla_historica_acumulada():
             p.equipo_visitante,
             p.goles_visitante
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND p.equipo_local IS NOT NULL AND p.equipo_visitante IS NOT NULL
+        WHERE p.equipo_local IS NOT NULL AND p.equipo_local <> ''
+          AND p.equipo_visitante IS NOT NULL AND p.equipo_visitante <> ''
         ORDER BY p.fecha
     """)
     
@@ -581,7 +582,7 @@ def obtener_tabla_historica_acumulada():
         tabla[visitante]["GF"] += gv
         tabla[visitante]["GC"] += gl
         
-        # Determinar puntos según el año
+        # Determinar puntos según el año (REGLA HISTÓRICA CORRECTA)
         puntos_victoria = 3 if anio >= 1995 else 2
         
         # Asignar resultados y puntos
@@ -619,7 +620,6 @@ def obtener_tabla_historica_acumulada():
     posiciones.sort(key=lambda x: (x[8], x[7], x[5]), reverse=True)
     
     return posiciones, len(partidos)
-
 
 # =====================================
 # NUEVAS FUNCIONES: CAMPAÑAS Y VERSUS
@@ -1617,6 +1617,7 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
+
 
 
 
