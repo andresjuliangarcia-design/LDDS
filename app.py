@@ -11,7 +11,7 @@ from datetime import datetime
 DB = "football_nueva.db"
 
 st.set_page_config(
-    page_title="🏆 Seguimiento Liga de Fútbol",
+    page_title="🏆 SEstadísticas de la Liga Deportiva del Sur",
     page_icon="⚽",
     layout="wide"
 )
@@ -899,7 +899,7 @@ equipo_filtro = st.sidebar.selectbox(
 )
 solo_expulsados = st.sidebar.checkbox("✅ Solo expulsados", key="sidebar_solo_expulsados")
 st.sidebar.markdown("---")
-st.sidebar.caption("💡 Filtros aplicados en las primeras pestañas")
+st.sidebar.caption("💡 Filtros apara aplicar en las pestañas: Goles x jugador, Tarjetas x jugador")
 
 # =====================================
 # PESTAÑAS
@@ -1605,8 +1605,3 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
-
-
-
-
-
