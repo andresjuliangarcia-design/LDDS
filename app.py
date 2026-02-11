@@ -242,13 +242,8 @@ def obtener_evolucion_equipo(equipo):
             SUM(CASE WHEN t.tipo = 'Expulsado' THEN 1 ELSE 0 END) AS exp
         FROM partidos p
         JOIN tarjetas t ON t.partido_id = p.id
-        WHERE p.arbitro IS NOT NULL
-          AND p.arbitro <> ''
-          AND (
-              (p.equipo_local = ? AND t.equipo = 'Local')
-              OR 
-              (p.equipo_visitante = ? AND t.equipo = 'Visitante')
-          )
+        WHERE (p.equipo_local = ? AND t.equipo = 'Local')
+           OR (p.equipo_visitante = ? AND t.equipo = 'Visitante')
         GROUP BY anio
         ORDER BY anio
     """
@@ -398,8 +393,7 @@ def obtener_rendimiento_equipo(equipo, anio=None, campeonato=None):
                 ELSE 'Perdido'
             END AS resultado
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        WHERE (p.equipo_local = ? OR p.equipo_visitante = ?)
     """
     params = [equipo, equipo, equipo, equipo]
     if anio:
@@ -656,8 +650,7 @@ def obtener_campania_equipo(equipo, anio=None, campeonato=None):
                 ELSE p.goles_local
             END AS goles_contra
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        WHERE (p.equipo_local = ? OR p.equipo_visitante = ?)
     """
     params = [equipo, equipo, equipo, equipo, equipo, equipo, equipo]
     if anio:
@@ -714,8 +707,7 @@ def obtener_historial_versus(equipo1, equipo2, anio=None, campeonato=None):
                 ELSE 'Empate'
             END AS ganador
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (
+        WHERE (
             (p.equipo_local = ? AND p.equipo_visitante = ?)
             OR
             (p.equipo_local = ? AND p.equipo_visitante = ?)
@@ -808,8 +800,7 @@ def obtener_evolucion_goles_equipo(equipo):
                 WHEN p.equipo_visitante = ? THEN p.goles_local
                 ELSE 0 END) AS goles_contra
         FROM partidos p
-        WHERE p.arbitro IS NOT NULL AND p.arbitro <> ''
-        AND (p.equipo_local = ? OR p.equipo_visitante = ?)
+        WHERE (p.equipo_local = ? OR p.equipo_visitante = ?)
         GROUP BY anio
         ORDER BY anio
     """
