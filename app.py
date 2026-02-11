@@ -621,6 +621,7 @@ def obtener_tabla_historica_acumulada():
     
     return posiciones, len(partidos)
 
+
 # =====================================
 # NUEVAS FUNCIONES: CAMPAÑAS Y VERSUS
 # =====================================
@@ -1026,12 +1027,12 @@ with tab3:
                 # Gráfico
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.plot(df["anio"], df["amon"], marker="o", label="Amonestaciones", color="#FFC107")
-                ax.plot(df["anio"], df["exp"], marker="s", label="Expulsiones", color="#F44336")
-                ax.set_title(f"Evolución - {equipo}")
-                ax.set_xlabel("Año")
-                ax.set_ylabel("Cantidad")
-                ax.legend()
-                ax.grid(True, alpha=0.3)
+                ax.plot(df["anio"], df["exp"], marker="s", label="Expulsones", color="#F44336")
+                ax.set_title(f"Evolución - {equipo}") 
+                ax.set_xlabel("Año")                
+                ax.set_ylabel("Cantidad")                
+                ax.legend()                
+                ax.grid(True, alpha=0.3)                
                 st.pyplot(fig)
                 
                 st.dataframe(df, use_container_width=True, hide_index=True)
@@ -1617,7 +1618,6 @@ with tab13:
 st.markdown("---")
 
 st.caption("🏆 Sistema de Estadísticas ⚽ | Liga Deportiva del Sur")
-
 
 
 
